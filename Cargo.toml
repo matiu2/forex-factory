@@ -2,6 +2,13 @@
 name = "forex-factory"
 version = "0.1.0"
 edition = "2024"
+description = "Async Rust library for scraping economic event data from Forex Factory calendar"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/matiu2/forex-factory"
+keywords = ["forex", "trading", "calendar", "economic-events", "scraper"]
+categories = ["web-programming::http-client", "parsing", "asynchronous"]
+readme = "README.md"
+rust-version = "1.85"
 
 [features]
 default = ["rustls", "brotli"]
@@ -38,3 +45,6 @@ reqwest = { version = "0.13.1", default-features = false, features = ["cookies"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 reqwest = { version = "0.13.1", default-features = false }
+
+[dev-dependencies]
+tokio = { version = "1.49.0", features = ["rt-multi-thread", "macros"] }
