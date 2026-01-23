@@ -1,49 +1,61 @@
-# Forex Factory Library - Extraction TODO
+# Forex Factory Library
 
-Extract web scraping functionality from `../forex-factory-calendar-mcp` into this reusable library.
+A Rust library for scraping economic event data from the Forex Factory calendar.
 
-## Tasks
+## Features
 
-- [x] Set up Cargo.toml with required dependencies
-- [x] Create types module
-  - [x] impact.rs - Impact enum (Low, Medium, High)
-  - [x] currency.rs - Currency resolution utilities
-  - [x] event.rs - EconomicEvent struct
-  - [x] query.rs - EventQuery for filtering
-- [x] Create scraper module
-  - [x] http_client.rs - HttpCalendarFetcher
-  - [x] parser.rs - CalendarParser
-- [x] Create service module
-  - [x] calendar.rs - CalendarService (high-level API)
-- [x] Set up lib.rs with proper re-exports
-- [x] Run tests and ensure they pass (23 tests passing)
-- [x] Run cargo clippy and fix issues
-- [x] Run cargo fmt
-- [x] Commit the changes
+- Async HTTP client with browser mimicking
+- HTML parser with pre-compiled CSS selectors
+- WASM compatible
+- Configurable TLS backends
+
+## Cargo Features
+
+```toml
+[features]
+default = ["rustls"]
+
+# TLS backends - choose one
+rustls = ["reqwest/rustls"]                 # Default, pure Rust
+native-tls = ["reqwest/native-tls"]         # System TLS
+native-tls-vendored = ["reqwest/native-tls-vendored"]  # Bundled OpenSSL
+```
+
+### Usage Examples
+
+```bash
+# Use rustls (default)
+cargo add forex-factory
+
+# Use native TLS
+cargo add forex-factory --no-default-features --features native-tls
+
+# For WASM (browser handles TLS)
+cargo add forex-factory --no-default-features
+```
 
 ## Structure
 
 ```
 src/
 ├── lib.rs              # Re-exports public API
+├── error.rs            # Error types (thiserror)
 ├── types.rs            # Module declarations for types
 ├── types/
-│   ├── impact.rs
-│   ├── currency.rs
-│   ├── event.rs
-│   └── query.rs
+│   ├── impact.rs       # Impact enum (Low, Medium, High)
+│   ├── currency.rs     # Currency resolution utilities
+│   ├── event.rs        # EconomicEvent struct
+│   └── query.rs        # EventQuery for filtering
 ├── scraper.rs          # Module declarations for scraper
 ├── scraper/
-│   ├── http_client.rs
-│   └── parser.rs
+│   ├── http_client.rs  # HttpCalendarFetcher
+│   └── parser.rs       # CalendarParser
 ├── service.rs          # Module declarations for service
 └── service/
-    └── calendar.rs
+    └── calendar.rs     # CalendarService (high-level API)
 ```
 
 ## Public API
-
-The library exports:
 
 - `CalendarService` - High-level async service for fetching and querying events
 - `CalendarParser` - HTML parser for Forex Factory calendar pages
@@ -51,4 +63,34 @@ The library exports:
 - `EconomicEvent` - Struct representing a single economic event
 - `EventQuery` - Builder for filtering events
 - `Impact` - Enum for event impact levels (Low, Medium, High)
+- `Error` - Library error type
+- `Result<T>` - Library result type alias
 - `resolve_currency` - Function to resolve country names to currency codes
+
+## Example
+
+```rust
+use forex_factory::{CalendarService, EventQuery, Impact, Result};
+
+async fn fetch_events() -> Result<()> {
+    let service = CalendarService::new()?;
+
+    // Get all events for this week
+    let events = service.get_week_events().await?;
+
+    // Query with filters
+    let query = EventQuery::new()
+        .with_currency_pair("EUR/USD")
+        .with_min_impact(Impact::Medium);
+    let filtered = service.query_events(&query).await?;
+
+    Ok(())
+}
+```
+
+## WASM Notes
+
+On WASM targets:
+- Timezone detection is not available (browser provides timezone via cookies)
+- `cookie_store` and `timeout` are handled by the browser
+- TLS is handled by the browser (no feature flags needed)
