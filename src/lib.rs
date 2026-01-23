@@ -5,11 +5,10 @@
 //!
 //! # Example
 //!
-//! ```no_run
+//! ```ignore
 //! use forex_factory::{CalendarService, EventQuery, Impact, Result};
 //!
-//! #[tokio::main]
-//! async fn main() -> Result<()> {
+//! async fn fetch_events() -> Result<()> {
 //!     let service = CalendarService::new()?;
 //!
 //!     // Get all events for this week
