@@ -1,6 +1,4 @@
 use chrono::{Local, NaiveDate};
-use std::sync::Arc;
-use tokio::sync::Mutex;
 use tracing::info;
 
 use crate::error::Result;
@@ -9,7 +7,7 @@ use crate::types::{EconomicEvent, EventQuery, Impact};
 
 /// High-level service for fetching and querying economic events.
 pub struct CalendarService {
-    fetcher: Arc<Mutex<HttpCalendarFetcher>>,
+    fetcher: HttpCalendarFetcher,
     parser: CalendarParser,
 }
 
@@ -19,10 +17,7 @@ impl CalendarService {
         let fetcher = HttpCalendarFetcher::new()?;
         let parser = CalendarParser::new()?;
 
-        Ok(Self {
-            fetcher: Arc::new(Mutex::new(fetcher)),
-            parser,
-        })
+        Ok(Self { fetcher, parser })
     }
 
     /// Query events matching the given criteria.
@@ -33,9 +28,7 @@ impl CalendarService {
         info!("Fetching calendar for date: {base_date}");
 
         // Fetch HTML from Forex Factory
-        let fetcher = self.fetcher.lock().await;
-        let html = fetcher.fetch_date(base_date).await?;
-        drop(fetcher); // Release lock early
+        let html = self.fetcher.fetch_date(base_date).await?;
 
         // Parse events
         let events = self.parser.parse(&html, base_date);
@@ -56,29 +49,20 @@ impl CalendarService {
     /// Get events for today.
     pub async fn get_today_events(&self) -> Result<Vec<EconomicEvent>> {
         let today = Local::now().date_naive();
-        let fetcher = self.fetcher.lock().await;
-        let html = fetcher.fetch_today().await?;
-        drop(fetcher);
-
+        let html = self.fetcher.fetch_today().await?;
         Ok(self.parser.parse(&html, today))
     }
 
     /// Get events for this week.
     pub async fn get_week_events(&self) -> Result<Vec<EconomicEvent>> {
         let today = Local::now().date_naive();
-        let fetcher = self.fetcher.lock().await;
-        let html = fetcher.fetch_this_week().await?;
-        drop(fetcher);
-
+        let html = self.fetcher.fetch_this_week().await?;
         Ok(self.parser.parse(&html, today))
     }
 
     /// Get events for a specific week containing the given date.
     pub async fn get_week_events_for(&self, date: NaiveDate) -> Result<Vec<EconomicEvent>> {
-        let fetcher = self.fetcher.lock().await;
-        let html = fetcher.fetch_date(date).await?;
-        drop(fetcher);
-
+        let html = self.fetcher.fetch_date(date).await?;
         Ok(self.parser.parse(&html, date))
     }
 }

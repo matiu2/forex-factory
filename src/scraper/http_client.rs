@@ -1,7 +1,6 @@
 use chrono::{Datelike, NaiveDate};
 use reqwest::Client;
 use reqwest::header::{ACCEPT, ACCEPT_LANGUAGE, COOKIE, HeaderMap, HeaderValue, USER_AGENT};
-use std::time::Duration;
 use tracing::{debug, info};
 
 use crate::error::{Error, Result};
@@ -16,16 +15,19 @@ impl HttpCalendarFetcher {
     pub fn new() -> Result<Self> {
         info!("Creating HTTP client for Forex Factory...");
 
-        // Get system timezone to send to Forex Factory
-        let timezone = iana_time_zone::get_timezone().unwrap_or_else(|_| "UTC".to_string());
-        let timezone_encoded = timezone.replace('/', "%2F");
-        info!("Using timezone: {timezone}");
-
         let mut headers = HeaderMap::new();
 
-        // Send timezone cookie so FF returns times in our local timezone
-        let cookie_value = format!("fftimezone={timezone_encoded}");
-        headers.insert(COOKIE, HeaderValue::from_str(&cookie_value)?);
+        // Get system timezone to send to Forex Factory (not available on WASM)
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let timezone = iana_time_zone::get_timezone().unwrap_or_else(|_| "UTC".to_string());
+            let timezone_encoded = timezone.replace('/', "%2F");
+            info!("Using timezone: {timezone}");
+
+            // Send timezone cookie so FF returns times in our local timezone
+            let cookie_value = format!("fftimezone={timezone_encoded}");
+            headers.insert(COOKIE, HeaderValue::from_str(&cookie_value)?);
+        }
 
         // Mimic a real browser
         headers.insert(
@@ -55,11 +57,18 @@ impl HttpCalendarFetcher {
         headers.insert("Sec-Fetch-User", HeaderValue::from_static("?1"));
         headers.insert("Upgrade-Insecure-Requests", HeaderValue::from_static("1"));
 
-        let client = Client::builder()
-            .default_headers(headers)
-            .cookie_store(true)
-            .timeout(Duration::from_secs(30))
-            .build()?;
+        #[cfg(not(target_arch = "wasm32"))]
+        let client = {
+            use std::time::Duration;
+            Client::builder()
+                .default_headers(headers)
+                .cookie_store(true)
+                .timeout(Duration::from_secs(30))
+                .build()?
+        };
+
+        #[cfg(target_arch = "wasm32")]
+        let client = Client::builder().default_headers(headers).build()?;
 
         Ok(Self { client })
     }

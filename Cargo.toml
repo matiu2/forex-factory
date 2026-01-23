@@ -3,12 +3,24 @@ name = "forex-factory"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = ["rustls"]
+
+# TLS backends - choose one (reqwest 0.13+ uses rustls by default)
+rustls = ["reqwest/rustls"]
+native-tls = ["reqwest/native-tls"]
+native-tls-vendored = ["reqwest/native-tls-vendored"]
+
 [dependencies]
 chrono = { version = "0.4.43", features = ["serde"] }
-iana-time-zone = "0.1.64"
-reqwest = { version = "0.13.1", features = ["cookies"] }
 scraper = "0.25.0"
 serde = { version = "1.0.228", features = ["derive"] }
 thiserror = "2.0.18"
-tokio = { version = "1.49.0", features = ["sync"] }
 tracing = "0.1.44"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+iana-time-zone = "0.1.64"
+reqwest = { version = "0.13.1", features = ["cookies"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+reqwest = { version = "0.13.1" }
