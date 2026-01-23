@@ -13,7 +13,7 @@ A Rust library for scraping economic event data from the Forex Factory calendar.
 
 ```toml
 [features]
-default = ["rustls"]
+default = ["rustls", "brotli"]
 
 # TLS backends - choose one
 rustls = ["reqwest/rustls"]                     # Pure Rust TLS (default)

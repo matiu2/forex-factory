@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-default = ["rustls"]
+default = ["rustls", "brotli"]
 
 # TLS backends - choose one
 rustls = ["reqwest/rustls"]
