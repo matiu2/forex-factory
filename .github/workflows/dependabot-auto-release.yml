@@ -1,0 +1,109 @@
+name: Dependabot Auto-Release
+
+on:
+  push:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check-and-release:
+    name: Check and Auto-Release
+    runs-on: ubuntu-latest
+    # Only run for dependabot commits that update Cargo dependencies
+    if: github.actor == 'dependabot[bot]' && contains(github.event.head_commit.message, 'cargo')
+
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-bindgen-cli
+        run: cargo install wasm-bindgen-cli
+
+      - name: Install Chrome
+        uses: browser-actions/setup-chrome@v2
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run native tests
+        run: cargo test
+
+      - name: Run WASM tests
+        run: cargo test --target wasm32-unknown-unknown --lib --tests
+
+      - name: Run WASM tests (with wasm-timezone)
+        run: cargo test --target wasm32-unknown-unknown --lib --tests --features wasm-timezone
+
+      - name: Run clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Bump patch version
+        id: bump
+        run: |
+          # Get current version
+          CURRENT=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[0].version')
+          echo "Current version: $CURRENT"
+
+          # Parse and bump patch version
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+          NEW_PATCH=$((PATCH + 1))
+          NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
+          echo "New version: $NEW_VERSION"
+
+          # Update Cargo.toml
+          sed -i "s/^version = \"$CURRENT\"/version = \"$NEW_VERSION\"/" Cargo.toml
+
+          # Update CHANGELOG.md
+          DATE=$(date +%Y-%m-%d)
+          sed -i "s/^## \[Unreleased\]/## [Unreleased]\n\n## [$NEW_VERSION] - $DATE\n\n### Changed\n- Updated dependencies/" CHANGELOG.md
+
+          # Add new version link to bottom of CHANGELOG
+          sed -i "s|\[Unreleased\]: \(.*\)/compare/v\(.*\)\.\.\.HEAD|[Unreleased]: \1/compare/v$NEW_VERSION...HEAD\n[$NEW_VERSION]: \1/compare/v\2...v$NEW_VERSION|" CHANGELOG.md
+
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Commit version bump
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml Cargo.lock CHANGELOG.md
+          git commit -m "chore: bump version to ${{ steps.bump.outputs.version }}
+
+          Automated version bump after successful dependabot update.
+
+          Co-Authored-By: github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
+          git push
+
+      - name: Create and push tag
+        run: |
+          git tag "v${{ steps.bump.outputs.version }}"
+          git push --tags
+
+      - name: Publish to crates.io
+        run: cargo publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.bump.outputs.version }}
+          name: v${{ steps.bump.outputs.version }}
+          body: |
+            ## Changed
+            - Updated dependencies
+
+            This is an automated release triggered by Dependabot dependency updates.
+          generate_release_notes: true
