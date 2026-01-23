@@ -5,10 +5,10 @@ edition = "2024"
 
 [dependencies]
 chrono = { version = "0.4.43", features = ["serde"] }
-color-eyre = "0.6.5"
 iana-time-zone = "0.1.64"
 reqwest = { version = "0.13.1", features = ["cookies"] }
 scraper = "0.25.0"
 serde = { version = "1.0.228", features = ["derive"] }
+thiserror = "2.0.18"
 tokio = { version = "1.49.0", features = ["full"] }
 tracing = "0.1.44"

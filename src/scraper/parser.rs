@@ -1,8 +1,8 @@
 use chrono::{Datelike, Local, NaiveDate, NaiveDateTime, NaiveTime, TimeZone};
-use color_eyre::{Result, eyre::eyre};
 use scraper::{Html, Selector};
-use tracing::{debug, warn};
+use tracing::debug;
 
+use crate::error::{Error, Result};
 use crate::types::{EconomicEvent, Impact};
 
 /// Parses Forex Factory calendar HTML into structured events.
@@ -25,30 +25,30 @@ impl CalendarParser {
         Ok(Self {
             // Use data-event-id attribute to find actual event rows
             row_selector: Selector::parse("tr[data-event-id]")
-                .map_err(|e| eyre!("Invalid row selector: {e:?}"))?,
+                .map_err(|e| Error::InvalidSelector(format!("{e:?}")))?,
             date_selector: Selector::parse("td.calendar__date")
-                .map_err(|e| eyre!("Invalid date selector: {e:?}"))?,
+                .map_err(|e| Error::InvalidSelector(format!("{e:?}")))?,
             currency_selector: Selector::parse("td.calendar__currency")
-                .map_err(|e| eyre!("Invalid currency selector: {e:?}"))?,
+                .map_err(|e| Error::InvalidSelector(format!("{e:?}")))?,
             // Impact icon is in a span with class like "icon--ff-impact-yel"
             impact_selector: Selector::parse("td.calendar__impact span")
-                .map_err(|e| eyre!("Invalid impact selector: {e:?}"))?,
+                .map_err(|e| Error::InvalidSelector(format!("{e:?}")))?,
             event_selector: Selector::parse("td.calendar__event span.calendar__event-title")
-                .map_err(|e| eyre!("Invalid event selector: {e:?}"))?,
+                .map_err(|e| Error::InvalidSelector(format!("{e:?}")))?,
             time_selector: Selector::parse("td.calendar__time")
-                .map_err(|e| eyre!("Invalid time selector: {e:?}"))?,
+                .map_err(|e| Error::InvalidSelector(format!("{e:?}")))?,
             actual_selector: Selector::parse("td.calendar__actual")
-                .map_err(|e| eyre!("Invalid actual selector: {e:?}"))?,
+                .map_err(|e| Error::InvalidSelector(format!("{e:?}")))?,
             forecast_selector: Selector::parse("td.calendar__forecast")
-                .map_err(|e| eyre!("Invalid forecast selector: {e:?}"))?,
+                .map_err(|e| Error::InvalidSelector(format!("{e:?}")))?,
             previous_selector: Selector::parse("td.calendar__previous")
-                .map_err(|e| eyre!("Invalid previous selector: {e:?}"))?,
+                .map_err(|e| Error::InvalidSelector(format!("{e:?}")))?,
         })
     }
 
     /// Parse HTML content into a list of economic events.
     /// The `base_date` is used as fallback and to determine the year for date parsing.
-    pub fn parse(&self, html: &str, base_date: NaiveDate) -> Result<Vec<EconomicEvent>> {
+    pub fn parse(&self, html: &str, base_date: NaiveDate) -> Vec<EconomicEvent> {
         debug!("Parsing HTML of {} bytes for date {base_date}", html.len());
         let document = Html::parse_document(html);
         let mut events = Vec::new();
@@ -63,33 +63,29 @@ impl CalendarParser {
             let event = self.parse_row(&row, &mut current_date, &mut current_time, reference_year);
 
             match event {
-                Ok(Some(e)) => {
+                Some(e) => {
                     debug!("Parsed event: {} ({}) - {}", e.name, e.currency, e.impact);
                     events.push(e);
                 }
-                Ok(None) => {
+                None => {
                     // Row had no parseable event (e.g., header row)
-                    continue;
-                }
-                Err(e) => {
-                    warn!("Failed to parse row: {e}");
                     continue;
                 }
             }
         }
 
-        Ok(events)
+        events
     }
 
     /// Parse a single table row into an event.
-    /// Returns Ok(None) if the row doesn't contain event data.
+    /// Returns None if the row doesn't contain event data.
     fn parse_row(
         &self,
         row: &scraper::ElementRef,
         current_date: &mut NaiveDate,
         current_time: &mut Option<NaiveTime>,
         reference_year: i32,
-    ) -> Result<Option<EconomicEvent>> {
+    ) -> Option<EconomicEvent> {
         // Update date if present in this row
         let date_text = self.extract_text(row, &self.date_selector);
         if let Some(parsed_date) = parse_date(&date_text, reference_year) {
@@ -101,13 +97,13 @@ impl CalendarParser {
 
         let currency = self.extract_text(row, &self.currency_selector);
         if currency.is_empty() {
-            return Ok(None);
+            return None;
         }
 
         let impact = self.extract_impact(row).unwrap_or(Impact::Low);
         let name = self.extract_text(row, &self.event_selector);
         if name.is_empty() {
-            return Ok(None);
+            return None;
         }
 
         // Update time if present in this row
@@ -132,7 +128,7 @@ impl CalendarParser {
         let forecast = self.extract_text(row, &self.forecast_selector);
         let previous = self.extract_text(row, &self.previous_selector);
 
-        Ok(Some(EconomicEvent {
+        Some(EconomicEvent {
             name,
             currency,
             impact,
@@ -152,7 +148,7 @@ impl CalendarParser {
             } else {
                 Some(previous)
             },
-        }))
+        })
     }
 
     /// Extract text content from the first matching element.

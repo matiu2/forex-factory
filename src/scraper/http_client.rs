@@ -1,9 +1,10 @@
 use chrono::{Datelike, NaiveDate};
-use color_eyre::{Result, eyre::eyre};
 use reqwest::Client;
 use reqwest::header::{ACCEPT, ACCEPT_LANGUAGE, COOKIE, HeaderMap, HeaderValue, USER_AGENT};
 use std::time::Duration;
 use tracing::{debug, info};
+
+use crate::error::{Error, Result};
 
 /// Fetches the raw HTML content from Forex Factory calendar page using HTTP.
 pub struct HttpCalendarFetcher {
@@ -24,10 +25,7 @@ impl HttpCalendarFetcher {
 
         // Send timezone cookie so FF returns times in our local timezone
         let cookie_value = format!("fftimezone={timezone_encoded}");
-        headers.insert(
-            COOKIE,
-            HeaderValue::from_str(&cookie_value).map_err(|e| eyre!("Invalid cookie value: {e}"))?,
-        );
+        headers.insert(COOKIE, HeaderValue::from_str(&cookie_value)?);
 
         // Mimic a real browser
         headers.insert(
@@ -61,8 +59,7 @@ impl HttpCalendarFetcher {
             .default_headers(headers)
             .cookie_store(true)
             .timeout(Duration::from_secs(30))
-            .build()
-            .map_err(|e| eyre!("Failed to build HTTP client: {e}"))?;
+            .build()?;
 
         Ok(Self { client })
     }
@@ -95,38 +92,29 @@ impl HttpCalendarFetcher {
     async fn fetch_url(&self, url: &str) -> Result<String> {
         info!("Fetching calendar from: {url}");
 
-        let response = self
-            .client
-            .get(url)
-            .send()
-            .await
-            .map_err(|e| eyre!("Failed to fetch {url}: {e}"))?;
+        let response = self.client.get(url).send().await?;
 
         let status = response.status();
         if !status.is_success() {
-            return Err(eyre!("HTTP error {status} for {url}"));
+            return Err(Error::HttpStatus {
+                status,
+                url: url.to_string(),
+            });
         }
 
-        let html = response
-            .text()
-            .await
-            .map_err(|e| eyre!("Failed to read response body: {e}"))?;
+        let html = response.text().await?;
 
         debug!("Successfully fetched {} bytes of HTML", html.len());
 
         // Check if we hit Cloudflare challenge
         if html.contains("Just a moment...") || html.contains("Verifying you are human") {
-            return Err(eyre!(
-                "Cloudflare challenge detected. The site requires browser verification."
-            ));
+            return Err(Error::CloudflareChallenge);
         }
 
         // Check if we got the calendar table
         if !html.contains("calendar__table") && !html.contains("calendar_row") {
             debug!("HTML preview: {}", &html[..html.len().min(500)]);
-            return Err(eyre!(
-                "Calendar table not found in response. Page structure may have changed."
-            ));
+            return Err(Error::CalendarNotFound);
         }
 
         Ok(html)

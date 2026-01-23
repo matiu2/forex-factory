@@ -6,10 +6,10 @@
 //! # Example
 //!
 //! ```no_run
-//! use forex_factory::{CalendarService, EventQuery, Impact};
+//! use forex_factory::{CalendarService, EventQuery, Impact, Result};
 //!
 //! #[tokio::main]
-//! async fn main() -> color_eyre::Result<()> {
+//! async fn main() -> Result<()> {
 //!     let service = CalendarService::new()?;
 //!
 //!     // Get all events for this week
@@ -25,11 +25,13 @@
 //! }
 //! ```
 
+mod error;
 mod scraper;
 mod service;
 mod types;
 
 // Re-export public types
+pub use error::{Error, Result};
 pub use scraper::{CalendarParser, HttpCalendarFetcher};
 pub use service::CalendarService;
 pub use types::{EconomicEvent, EventQuery, Impact, resolve_currency};

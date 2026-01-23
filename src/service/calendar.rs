@@ -1,9 +1,9 @@
 use chrono::{Local, NaiveDate};
-use color_eyre::Result;
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::info;
 
+use crate::error::Result;
 use crate::scraper::{CalendarParser, HttpCalendarFetcher};
 use crate::types::{EconomicEvent, EventQuery, Impact};
 
@@ -38,7 +38,7 @@ impl CalendarService {
         drop(fetcher); // Release lock early
 
         // Parse events
-        let events = self.parser.parse(&html, base_date)?;
+        let events = self.parser.parse(&html, base_date);
 
         // Filter events based on query
         let min_impact = query.min_impact.unwrap_or(Impact::Low);
@@ -60,7 +60,7 @@ impl CalendarService {
         let html = fetcher.fetch_today().await?;
         drop(fetcher);
 
-        self.parser.parse(&html, today)
+        Ok(self.parser.parse(&html, today))
     }
 
     /// Get events for this week.
@@ -70,7 +70,7 @@ impl CalendarService {
         let html = fetcher.fetch_this_week().await?;
         drop(fetcher);
 
-        self.parser.parse(&html, today)
+        Ok(self.parser.parse(&html, today))
     }
 
     /// Get events for a specific week containing the given date.
@@ -79,6 +79,6 @@ impl CalendarService {
         let html = fetcher.fetch_date(date).await?;
         drop(fetcher);
 
-        self.parser.parse(&html, date)
+        Ok(self.parser.parse(&html, date))
     }
 }
