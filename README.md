@@ -108,7 +108,20 @@ async fn fetch_events() -> Result<()> {
 ## WASM Notes
 
 On WASM targets:
-- Timezone detection is not available (browser provides timezone via cookies)
+- Timezone detection is not available automatically
 - `cookie_store` and `timeout` are handled by the browser
 - TLS is handled by the browser (no TLS feature flags needed)
 - Use `--no-default-features` to avoid pulling in native TLS dependencies
+
+### Setting Timezone on WASM
+
+On native targets, the library automatically detects your system timezone. On WASM,
+you need to get the timezone from JavaScript and pass it:
+
+```rust
+// Get timezone from JS: Intl.DateTimeFormat().resolvedOptions().timeZone
+let timezone = get_timezone_from_js(); // e.g., "America/New_York"
+let service = CalendarService::with_timezone(&timezone)?;
+```
+
+If you don't set a timezone on WASM, it defaults to UTC.

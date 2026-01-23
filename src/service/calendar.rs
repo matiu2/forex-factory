@@ -13,8 +13,27 @@ pub struct CalendarService {
 
 impl CalendarService {
     /// Create a new calendar service.
+    ///
+    /// On native targets, automatically detects the system timezone.
+    /// On WASM targets, falls back to UTC unless you use `with_timezone()`.
     pub fn new() -> Result<Self> {
         let fetcher = HttpCalendarFetcher::new()?;
+        let parser = CalendarParser::new()?;
+
+        Ok(Self { fetcher, parser })
+    }
+
+    /// Create a new calendar service with a specific IANA timezone.
+    ///
+    /// Use this on WASM to set the timezone (get it from JavaScript via
+    /// `Intl.DateTimeFormat().resolvedOptions().timeZone`).
+    ///
+    /// # Example
+    /// ```ignore
+    /// let service = CalendarService::with_timezone("America/New_York")?;
+    /// ```
+    pub fn with_timezone(timezone: &str) -> Result<Self> {
+        let fetcher = HttpCalendarFetcher::with_timezone(timezone)?;
         let parser = CalendarParser::new()?;
 
         Ok(Self { fetcher, parser })

@@ -12,22 +12,43 @@ pub struct HttpCalendarFetcher {
 
 impl HttpCalendarFetcher {
     /// Create a new fetcher with a configured HTTP client.
+    ///
+    /// On native targets, automatically detects the system timezone.
+    /// On WASM targets, falls back to UTC unless you use `with_timezone()`.
     pub fn new() -> Result<Self> {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let timezone = iana_time_zone::get_timezone().unwrap_or_else(|_| "UTC".to_string());
+            Self::with_timezone(&timezone)
+        }
+
+        #[cfg(target_arch = "wasm32")]
+        {
+            Self::with_timezone("UTC")
+        }
+    }
+
+    /// Create a new fetcher with a specific IANA timezone.
+    ///
+    /// Use this on WASM to set the timezone (get it from JavaScript via
+    /// `Intl.DateTimeFormat().resolvedOptions().timeZone`).
+    ///
+    /// # Example
+    /// ```ignore
+    /// // On WASM, get timezone from JS and pass it:
+    /// let fetcher = HttpCalendarFetcher::with_timezone("America/New_York")?;
+    /// ```
+    pub fn with_timezone(timezone: &str) -> Result<Self> {
         info!("Creating HTTP client for Forex Factory...");
 
         let mut headers = HeaderMap::new();
 
-        // Get system timezone to send to Forex Factory (not available on WASM)
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let timezone = iana_time_zone::get_timezone().unwrap_or_else(|_| "UTC".to_string());
-            let timezone_encoded = timezone.replace('/', "%2F");
-            info!("Using timezone: {timezone}");
+        let timezone_encoded = timezone.replace('/', "%2F");
+        info!("Using timezone: {timezone}");
 
-            // Send timezone cookie so FF returns times in our local timezone
-            let cookie_value = format!("fftimezone={timezone_encoded}");
-            headers.insert(COOKIE, HeaderValue::from_str(&cookie_value)?);
-        }
+        // Send timezone cookie so FF returns times in our local timezone
+        let cookie_value = format!("fftimezone={timezone_encoded}");
+        headers.insert(COOKIE, HeaderValue::from_str(&cookie_value)?);
 
         // Mimic a real browser
         headers.insert(
