@@ -19,7 +19,7 @@ default = ["rustls", "brotli"]
 rustls = ["reqwest/rustls"]                     # Pure Rust TLS (default)
 rustls-native-certs = ["reqwest/rustls-native-certs"]  # Rustls with system certs
 rustls-no-provider = ["reqwest/rustls-no-provider"]    # Rustls, bring your own provider
-native-tls = ["reqwest/native-tls"]             # System TLS (OpenSSL/Schannel/SecureTransport)
+native-tls = ["reqwest/native-tls"]             # System TLS - better Cloudflare compatibility
 native-tls-vendored = ["reqwest/native-tls-vendored"]  # Bundled OpenSSL
 
 # Compression
@@ -44,8 +44,8 @@ wasm-timezone = ["js-sys"]      # Auto-detect browser timezone on WASM
 # Use rustls (default)
 cargo add forex-factory
 
-# Use native TLS
-cargo add forex-factory --no-default-features --features native-tls
+# Use native TLS (recommended if you encounter Cloudflare challenges)
+cargo add forex-factory --no-default-features --features native-tls,brotli
 
 # With compression support
 cargo add forex-factory --features gzip,brotli
@@ -141,3 +141,18 @@ let service = CalendarService::with_timezone("America/New_York")?;
 ```
 
 Without either option, WASM defaults to UTC.
+
+## Troubleshooting
+
+### Cloudflare Challenges
+
+Forex Factory uses Cloudflare protection. If you encounter `CloudflareChallenge` errors,
+try switching to `native-tls`:
+
+```bash
+cargo add forex-factory --no-default-features --features native-tls,brotli
+```
+
+The `native-tls` backend uses your system's TLS implementation (OpenSSL on Linux,
+Schannel on Windows, SecureTransport on macOS), which has better TLS fingerprinting
+compatibility with Cloudflare than the pure-Rust `rustls` backend.
