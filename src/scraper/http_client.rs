@@ -14,18 +14,11 @@ impl HttpCalendarFetcher {
     /// Create a new fetcher with a configured HTTP client.
     ///
     /// On native targets, automatically detects the system timezone.
-    /// On WASM targets, falls back to UTC unless you use `with_timezone()`.
+    /// On WASM with the `wasm-timezone` feature, detects the browser timezone.
+    /// On WASM without the feature, falls back to UTC (use `with_timezone()` to override).
     pub fn new() -> Result<Self> {
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let timezone = iana_time_zone::get_timezone().unwrap_or_else(|_| "UTC".to_string());
-            Self::with_timezone(&timezone)
-        }
-
-        #[cfg(target_arch = "wasm32")]
-        {
-            Self::with_timezone("UTC")
-        }
+        let timezone = get_system_timezone();
+        Self::with_timezone(&timezone)
     }
 
     /// Create a new fetcher with a specific IANA timezone.
@@ -157,6 +150,33 @@ fn format_week_param(date: NaiveDate) -> String {
     let day = date.day();
     let year = date.year();
     format!("{month}{day}.{year}")
+}
+
+/// Get the system timezone.
+///
+/// - Native: uses iana-time-zone crate
+/// - WASM with wasm-timezone feature: uses js-sys to query browser
+/// - WASM without feature: returns "UTC"
+#[cfg(not(target_arch = "wasm32"))]
+fn get_system_timezone() -> String {
+    iana_time_zone::get_timezone().unwrap_or_else(|_| "UTC".to_string())
+}
+
+#[cfg(all(target_arch = "wasm32", feature = "wasm-timezone"))]
+fn get_system_timezone() -> String {
+    use js_sys::{Array, Intl, Object, Reflect};
+
+    let options = Intl::DateTimeFormat::new(&Array::new(), &Object::new()).resolved_options();
+
+    Reflect::get(&options, &"timeZone".into())
+        .ok()
+        .and_then(|v| v.as_string())
+        .unwrap_or_else(|| "UTC".to_string())
+}
+
+#[cfg(all(target_arch = "wasm32", not(feature = "wasm-timezone")))]
+fn get_system_timezone() -> String {
+    "UTC".to_string()
 }
 
 #[cfg(test)]

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `wasm-timezone` feature for automatic browser timezone detection on WASM via `js-sys`
+- `CalendarService::with_timezone()` and `HttpCalendarFetcher::with_timezone()` for manual timezone setting
+
 ## [0.1.0] - 2025-01-23
 
 ### Added

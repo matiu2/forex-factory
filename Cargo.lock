@@ -504,6 +504,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "iana-time-zone",
+ "js-sys",
  "reqwest",
  "scraper",
  "serde",

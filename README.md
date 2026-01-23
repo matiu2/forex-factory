@@ -33,6 +33,9 @@ http2 = ["reqwest/http2"]       # HTTP/2 support
 http3 = ["reqwest/http3"]       # HTTP/3 support (unstable)
 socks = ["reqwest/socks"]       # SOCKS5 proxy support
 hickory-dns = ["reqwest/hickory-dns"]  # Hickory DNS resolver
+
+# WASM
+wasm-timezone = ["js-sys"]      # Auto-detect browser timezone on WASM
 ```
 
 ### Usage Examples
@@ -49,6 +52,9 @@ cargo add forex-factory --features gzip,brotli
 
 # For WASM (browser handles TLS)
 cargo add forex-factory --no-default-features
+
+# For WASM with automatic timezone detection
+cargo add forex-factory --no-default-features --features wasm-timezone
 ```
 
 ## Structure
@@ -108,20 +114,30 @@ async fn fetch_events() -> Result<()> {
 ## WASM Notes
 
 On WASM targets:
-- Timezone detection is not available automatically
 - `cookie_store` and `timeout` are handled by the browser
 - TLS is handled by the browser (no TLS feature flags needed)
 - Use `--no-default-features` to avoid pulling in native TLS dependencies
 
-### Setting Timezone on WASM
+### Timezone on WASM
 
-On native targets, the library automatically detects your system timezone. On WASM,
-you need to get the timezone from JavaScript and pass it:
+On native targets, the library automatically detects your system timezone.
 
-```rust
-// Get timezone from JS: Intl.DateTimeFormat().resolvedOptions().timeZone
-let timezone = get_timezone_from_js(); // e.g., "America/New_York"
-let service = CalendarService::with_timezone(&timezone)?;
+On WASM, you have two options:
+
+**Option 1: Enable `wasm-timezone` feature (recommended)**
+
+```bash
+cargo add forex-factory --no-default-features --features wasm-timezone
 ```
 
-If you don't set a timezone on WASM, it defaults to UTC.
+This uses `js-sys` to automatically detect the browser's timezone via
+`Intl.DateTimeFormat().resolvedOptions().timeZone`.
+
+**Option 2: Manual timezone**
+
+```rust
+// Get timezone from JS yourself and pass it:
+let service = CalendarService::with_timezone("America/New_York")?;
+```
+
+Without either option, WASM defaults to UTC.
