@@ -8,7 +8,7 @@ repository = "https://github.com/matiu2/forex-factory"
 keywords = ["forex", "trading", "calendar", "economic-events", "scraper"]
 categories = ["web-programming::http-client", "parsing", "asynchronous"]
 readme = "README.md"
-rust-version = "1.85"
+rust-version = "1.88"
 
 [features]
 default = ["rustls", "brotli"]
