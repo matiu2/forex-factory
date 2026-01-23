@@ -7,7 +7,7 @@ A Rust library for scraping economic event data from the Forex Factory calendar.
 - Async HTTP client with browser mimicking
 - HTML parser with pre-compiled CSS selectors
 - WASM compatible
-- Configurable TLS backends
+- Configurable TLS backends, compression, and more
 
 ## Cargo Features
 
@@ -16,9 +16,23 @@ A Rust library for scraping economic event data from the Forex Factory calendar.
 default = ["rustls"]
 
 # TLS backends - choose one
-rustls = ["reqwest/rustls"]                 # Default, pure Rust
-native-tls = ["reqwest/native-tls"]         # System TLS
+rustls = ["reqwest/rustls"]                     # Pure Rust TLS (default)
+rustls-native-certs = ["reqwest/rustls-native-certs"]  # Rustls with system certs
+rustls-no-provider = ["reqwest/rustls-no-provider"]    # Rustls, bring your own provider
+native-tls = ["reqwest/native-tls"]             # System TLS (OpenSSL/Schannel/SecureTransport)
 native-tls-vendored = ["reqwest/native-tls-vendored"]  # Bundled OpenSSL
+
+# Compression
+gzip = ["reqwest/gzip"]
+brotli = ["reqwest/brotli"]
+deflate = ["reqwest/deflate"]
+zstd = ["reqwest/zstd"]
+
+# Other
+http2 = ["reqwest/http2"]       # HTTP/2 support
+http3 = ["reqwest/http3"]       # HTTP/3 support (unstable)
+socks = ["reqwest/socks"]       # SOCKS5 proxy support
+hickory-dns = ["reqwest/hickory-dns"]  # Hickory DNS resolver
 ```
 
 ### Usage Examples
@@ -29,6 +43,9 @@ cargo add forex-factory
 
 # Use native TLS
 cargo add forex-factory --no-default-features --features native-tls
+
+# With compression support
+cargo add forex-factory --features gzip,brotli
 
 # For WASM (browser handles TLS)
 cargo add forex-factory --no-default-features
@@ -93,4 +110,5 @@ async fn fetch_events() -> Result<()> {
 On WASM targets:
 - Timezone detection is not available (browser provides timezone via cookies)
 - `cookie_store` and `timeout` are handled by the browser
-- TLS is handled by the browser (no feature flags needed)
+- TLS is handled by the browser (no TLS feature flags needed)
+- Use `--no-default-features` to avoid pulling in native TLS dependencies

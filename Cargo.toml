@@ -6,10 +6,24 @@ edition = "2024"
 [features]
 default = ["rustls"]
 
-# TLS backends - choose one (reqwest 0.13+ uses rustls by default)
+# TLS backends - choose one
 rustls = ["reqwest/rustls"]
+rustls-native-certs = ["reqwest/rustls-native-certs"]
+rustls-no-provider = ["reqwest/rustls-no-provider"]
 native-tls = ["reqwest/native-tls"]
 native-tls-vendored = ["reqwest/native-tls-vendored"]
+
+# Compression
+gzip = ["reqwest/gzip"]
+brotli = ["reqwest/brotli"]
+deflate = ["reqwest/deflate"]
+zstd = ["reqwest/zstd"]
+
+# Other
+http2 = ["reqwest/http2"]
+http3 = ["reqwest/http3"]
+socks = ["reqwest/socks"]
+hickory-dns = ["reqwest/hickory-dns"]
 
 [dependencies]
 chrono = { version = "0.4.43", features = ["serde"] }
@@ -20,7 +34,7 @@ tracing = "0.1.44"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 iana-time-zone = "0.1.64"
-reqwest = { version = "0.13.1", features = ["cookies"] }
+reqwest = { version = "0.13.1", default-features = false, features = ["cookies"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-reqwest = { version = "0.13.1" }
+reqwest = { version = "0.13.1", default-features = false }
