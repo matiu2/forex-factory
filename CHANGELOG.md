@@ -7,20 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-- `wasm-timezone` feature for automatic browser timezone detection on WASM via `js-sys`
-- `CalendarService::with_timezone()` and `HttpCalendarFetcher::with_timezone()` for manual timezone setting
-
 ## [0.1.0] - 2025-01-23
 
 ### Added
 - Initial release
 - `CalendarService` for high-level async event fetching
+- `CalendarService::with_timezone()` and `HttpCalendarFetcher::with_timezone()` for manual timezone setting
 - `EventQuery` builder for filtering events by currency, date range, and impact
 - `EconomicEvent` struct with all event data fields
 - `Impact` enum (Low, Medium, High) with star ratings
 - `resolve_currency` for converting country names to currency codes
 - WASM compatibility with conditional compilation
+- `wasm-timezone` feature for automatic browser timezone detection on WASM via `js-sys`
 - Configurable TLS backends via feature flags (rustls, native-tls)
 - Compression support (brotli enabled by default, gzip, deflate, zstd)
 - HTTP/2, HTTP/3, SOCKS proxy, and Hickory DNS resolver features
