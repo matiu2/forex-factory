@@ -51,4 +51,7 @@ reqwest = { version = "0.13.1", default-features = false }
 js-sys = { version = "0.3", optional = true }
 
 [dev-dependencies]
+wasm-bindgen-test = "0.3.58"
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 tokio = { version = "1.49.0", features = ["rt-multi-thread", "macros"] }
