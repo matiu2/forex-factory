@@ -47,7 +47,8 @@ impl CalendarService {
     /// - Minimum impact level
     ///
     /// For queries spanning multiple weeks, it fetches all necessary weeks.
-    pub async fn query_events(&self, query: &EventQuery) -> Result<Vec<EconomicEvent>> {
+    pub async fn query_events(&self, query: impl AsRef<EventQuery>) -> Result<Vec<EconomicEvent>> {
+        let query = query.as_ref();
         let (from_date, to_date) = query.fetch_date_range();
         let start_date = from_date.unwrap_or_else(|| Local::now().date_naive());
         let end_date = to_date.unwrap_or(start_date);

@@ -211,6 +211,12 @@ impl EventQuery {
     }
 }
 
+impl AsRef<EventQuery> for EventQuery {
+    fn as_ref(&self) -> &EventQuery {
+        self
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
