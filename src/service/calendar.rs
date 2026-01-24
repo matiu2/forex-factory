@@ -52,7 +52,7 @@ impl CalendarService {
         let start_date = from_date.unwrap_or_else(|| Local::now().date_naive());
         let end_date = to_date.unwrap_or(start_date);
 
-        info!("Fetching calendar for date range: {start_date} to {end_date}");
+        info!("EventQuery: {query:?}");
 
         // Fetch events for all weeks in range
         let mut all_events = Vec::new();
