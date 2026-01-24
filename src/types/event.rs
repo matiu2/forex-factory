@@ -1,7 +1,7 @@
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 
-use super::Impact;
+use super::{Currency, Impact};
 
 /// An economic event from the Forex Factory calendar.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -34,7 +34,24 @@ impl EconomicEvent {
         self.impact >= min_impact
     }
 
-    /// Check if this event is for one of the given currencies
+    /// Get the currency as a Currency enum, if it's a known currency
+    pub fn currency_enum(&self) -> Option<Currency> {
+        self.currency.parse().ok()
+    }
+
+    /// Check if this event matches one of the given Currency enums
+    pub fn matches_currency_list(&self, currencies: &[Currency]) -> bool {
+        if currencies.is_empty() {
+            return true;
+        }
+        self.currency_enum()
+            .map(|c| currencies.contains(&c))
+            .unwrap_or(false)
+    }
+
+    /// Check if this event is for one of the given currencies (string version)
+    ///
+    /// Deprecated: prefer `matches_currency_list` with Currency enums
     pub fn matches_currencies(&self, currencies: &[String]) -> bool {
         if currencies.is_empty() {
             return true;

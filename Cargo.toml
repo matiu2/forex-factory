@@ -37,10 +37,12 @@ wasm-timezone = ["js-sys"]
 
 [dependencies]
 chrono = { version = "0.4.43", features = ["serde"] }
+parse-display = "0.10.0"
 scraper = "0.25.0"
 serde = { version = "1.0.228", features = ["derive"] }
 thiserror = "2.0.18"
 tracing = "0.1.44"
+typed-builder = "0.23.2"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 iana-time-zone = "0.1.64"

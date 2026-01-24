@@ -33,4 +33,4 @@ mod types;
 pub use error::{Error, Result};
 pub use scraper::{CalendarParser, HttpCalendarFetcher};
 pub use service::CalendarService;
-pub use types::{EconomicEvent, EventQuery, Impact, resolve_currency};
+pub use types::{Currency, EconomicEvent, EventQuery, Impact, resolve_currency};

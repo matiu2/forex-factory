@@ -2,7 +2,7 @@
 //!
 //! Run with: `cargo run --example basic`
 
-use forex_factory::{CalendarService, EventQuery, Impact, Result};
+use forex_factory::{CalendarService, Currency, EventQuery, Impact, Result};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -24,7 +24,7 @@ async fn main() -> Result<()> {
 
     println!("=== High Impact USD Events This Week ===\n");
     let query = EventQuery::new()
-        .with_currencies(vec!["USD".to_string()])
+        .with_currency(Currency::USD)
         .with_min_impact(Impact::High);
     let usd_events = service.query_events(&query).await?;
     for event in &usd_events {

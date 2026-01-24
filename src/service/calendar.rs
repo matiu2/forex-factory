@@ -40,24 +40,39 @@ impl CalendarService {
     }
 
     /// Query events matching the given criteria.
+    ///
+    /// This method fetches events and filters them based on the query parameters:
+    /// - Date/datetime range
+    /// - Currency filter
+    /// - Minimum impact level
+    ///
+    /// For queries spanning multiple weeks, it fetches all necessary weeks.
     pub async fn query_events(&self, query: &EventQuery) -> Result<Vec<EconomicEvent>> {
-        // Determine which date to fetch
-        let base_date = query.from_date.unwrap_or_else(|| Local::now().date_naive());
+        let (from_date, to_date) = query.fetch_date_range();
+        let start_date = from_date.unwrap_or_else(|| Local::now().date_naive());
+        let end_date = to_date.unwrap_or(start_date);
 
-        info!("Fetching calendar for date: {base_date}");
+        info!("Fetching calendar for date range: {start_date} to {end_date}");
 
-        // Fetch HTML from Forex Factory
-        let html = self.fetcher.fetch_date(base_date).await?;
+        // Fetch events for all weeks in range
+        let mut all_events = Vec::new();
+        let mut current_date = start_date;
 
-        // Parse events
-        let events = self.parser.parse(&html, base_date);
+        while current_date <= end_date {
+            let html = self.fetcher.fetch_date(current_date).await?;
+            let events = self.parser.parse(&html, current_date);
+            all_events.extend(events);
+
+            // Move to next week (7 days forward)
+            current_date += chrono::Duration::days(7);
+        }
 
         // Filter events based on query
         let min_impact = query.min_impact.unwrap_or(Impact::Low);
-        let filtered: Vec<EconomicEvent> = events
+        let filtered: Vec<EconomicEvent> = all_events
             .into_iter()
             .filter(|e| e.meets_impact(min_impact))
-            .filter(|e| e.matches_currencies(&query.currencies))
+            .filter(|e| e.matches_currency_list(&query.currencies))
             .filter(|e| query.datetime_in_range(&e.datetime))
             .collect();
 
