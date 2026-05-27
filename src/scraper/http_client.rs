@@ -43,33 +43,28 @@ impl HttpCalendarFetcher {
         let cookie_value = format!("fftimezone={timezone_encoded}");
         headers.insert(COOKIE, HeaderValue::from_str(&cookie_value)?);
 
-        // Mimic a real browser
+        // Mimic Firefox. As of 2026-05, Cloudflare lets Firefox-shaped
+        // requests through; Chrome's Sec-Ch-Ua client hints trigger the
+        // managed challenge (403). Firefox does not send Sec-Ch-Ua* at all.
         headers.insert(
             USER_AGENT,
             HeaderValue::from_static(
-                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                "Mozilla/5.0 (X11; Linux x86_64; rv:150.0) Gecko/20100101 Firefox/150.0",
             ),
         );
         headers.insert(
             ACCEPT,
             HeaderValue::from_static(
-                "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8"
+                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             ),
         );
         headers.insert(ACCEPT_LANGUAGE, HeaderValue::from_static("en-US,en;q=0.9"));
-        headers.insert(
-            "Sec-Ch-Ua",
-            HeaderValue::from_static(
-                "\"Not_A Brand\";v=\"8\", \"Chromium\";v=\"120\", \"Google Chrome\";v=\"120\"",
-            ),
-        );
-        headers.insert("Sec-Ch-Ua-Mobile", HeaderValue::from_static("?0"));
-        headers.insert("Sec-Ch-Ua-Platform", HeaderValue::from_static("\"Linux\""));
         headers.insert("Sec-Fetch-Dest", HeaderValue::from_static("document"));
         headers.insert("Sec-Fetch-Mode", HeaderValue::from_static("navigate"));
         headers.insert("Sec-Fetch-Site", HeaderValue::from_static("none"));
         headers.insert("Sec-Fetch-User", HeaderValue::from_static("?1"));
         headers.insert("Upgrade-Insecure-Requests", HeaderValue::from_static("1"));
+        headers.insert("Priority", HeaderValue::from_static("u=0, i"));
 
         #[cfg(not(target_arch = "wasm32"))]
         let client = {

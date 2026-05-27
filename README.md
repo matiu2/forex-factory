@@ -13,14 +13,14 @@ A Rust library for scraping economic event data from the Forex Factory calendar.
 
 ```toml
 [features]
-default = ["rustls", "brotli"]
+default = ["native-tls", "brotli", "http2"]
 
 # TLS backends - choose one
-rustls = ["reqwest/rustls"]                     # Pure Rust TLS (default)
+native-tls = ["reqwest/native-tls"]             # System TLS (default) - required to bypass Cloudflare
+native-tls-vendored = ["reqwest/native-tls-vendored"]  # Bundled OpenSSL
+rustls = ["reqwest/rustls"]                     # Pure Rust TLS (currently blocked by Cloudflare)
 rustls-native-certs = ["reqwest/rustls-native-certs"]  # Rustls with system certs
 rustls-no-provider = ["reqwest/rustls-no-provider"]    # Rustls, bring your own provider
-native-tls = ["reqwest/native-tls"]             # System TLS - better Cloudflare compatibility
-native-tls-vendored = ["reqwest/native-tls-vendored"]  # Bundled OpenSSL
 
 # Compression
 gzip = ["reqwest/gzip"]
@@ -41,14 +41,14 @@ wasm-timezone = ["js-sys"]      # Auto-detect browser timezone on WASM
 ### Usage Examples
 
 ```bash
-# Use rustls (default)
+# Default: native TLS + brotli + http2 (gets past Cloudflare)
 cargo add forex-factory
 
-# Use native TLS (recommended if you encounter Cloudflare challenges)
-cargo add forex-factory --no-default-features --features native-tls,brotli
+# With extra compression support
+cargo add forex-factory --features gzip
 
-# With compression support
-cargo add forex-factory --features gzip,brotli
+# Bundled OpenSSL (e.g. for static binaries / cross-compilation)
+cargo add forex-factory --no-default-features --features native-tls-vendored,brotli,http2
 
 # For WASM (browser handles TLS)
 cargo add forex-factory --no-default-features
@@ -146,13 +146,16 @@ Without either option, WASM defaults to UTC.
 
 ### Cloudflare Challenges
 
-Forex Factory uses Cloudflare protection. If you encounter `CloudflareChallenge` errors,
-try switching to `native-tls`:
+Forex Factory is fronted by Cloudflare. The default features (`native-tls`,
+`brotli`, `http2`) plus the Firefox-shaped request headers this library sends
+are tuned to get past the current bot-fight rules. If you build with
+`--no-default-features` you must include at least `native-tls`, `brotli`,
+and `http2` or Cloudflare will return 403:
 
 ```bash
-cargo add forex-factory --no-default-features --features native-tls,brotli
+cargo add forex-factory --no-default-features --features native-tls,brotli,http2
 ```
 
-The `native-tls` backend uses your system's TLS implementation (OpenSSL on Linux,
-Schannel on Windows, SecureTransport on macOS), which has better TLS fingerprinting
-compatibility with Cloudflare than the pure-Rust `rustls` backend.
+The `rustls` backend's TLS ClientHello fingerprint is currently rejected by
+Cloudflare on this host regardless of headers. Use `native-tls` (system
+OpenSSL/Schannel/SecureTransport) or `native-tls-vendored` (bundled OpenSSL).

@@ -11,7 +11,7 @@ readme = "README.md"
 rust-version = "1.88"
 
 [features]
-default = ["rustls", "brotli"]
+default = ["native-tls", "brotli", "http2"]
 
 # TLS backends - choose one
 rustls = ["reqwest/rustls"]
