@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-27
+
+### Changed
+- **BREAKING (default features):** default feature set is now
+  `["native-tls", "brotli", "http2"]` (was `["rustls", "brotli"]`).
+  Cloudflare's bot-fight rules now reject the `rustls` ClientHello
+  fingerprint on forexfactory.com, so the library no longer works out of
+  the box on `rustls`. Native TLS + HTTP/2 + Firefox-shaped headers gets
+  past the challenge.
+- Request headers rewritten to impersonate Firefox 150 (drops Chrome
+  `Sec-Ch-Ua*` client hints, adds `Priority`). The previous Chrome
+  client-hint headers were cross-checked against the TLS fingerprint by
+  Cloudflare and rejected.
+
+### Migration
+- If you build with `--no-default-features`, you now need at least
+  `native-tls`, `brotli`, and `http2` to talk to forexfactory.com.
+- `rustls` and friends are still available as opt-in features but will
+  currently 403 against forexfactory.com.
+
 ## [0.1.0] - 2025-01-23
 
 ### Added
