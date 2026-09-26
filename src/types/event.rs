@@ -26,9 +26,41 @@ pub struct EconomicEvent {
 
     /// Previous period's value
     pub previous: Option<String>,
+
+    /// Forex Factory's own id for this event, from the row's
+    /// `data-event-id` attribute.
+    ///
+    /// This is the only stable per-event handle the calendar exposes — the
+    /// rows carry no anchor, because the detail view is driven by JavaScript.
+    /// It deep-links: `https://www.forexfactory.com/calendar?event=<id>`
+    /// redirects to that event's day and opens its detail panel.
+    ///
+    /// `Option` deliberately: if the attribute ever moves or is renamed, an
+    /// event must still parse WITHOUT an id rather than be dropped. Losing a
+    /// high-impact print because its id changed shape would be far worse than
+    /// losing a link to it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub event_id: Option<String>,
 }
 
 impl EconomicEvent {
+    /// A deep link to this event on forexfactory.com, or `None` when the
+    /// event carries no [`event_id`](Self::event_id).
+    ///
+    /// `?event=<id>` is a redirect: Forex Factory resolves it to the event's
+    /// own day and opens its detail panel
+    /// (`?day=sep20.2026&event=150129#detail=150129`). Verified against the
+    /// live site — `/calendar/detail/<id>` does NOT work, and the row carries
+    /// no anchor of its own, so this is the form to use.
+    ///
+    /// Built here rather than by each caller so the URL shape is stated once;
+    /// a caller that hand-assembled it would be a second thing to keep in step.
+    pub fn detail_url(&self) -> Option<String> {
+        self.event_id
+            .as_deref()
+            .map(|id| format!("https://www.forexfactory.com/calendar?event={id}"))
+    }
+
     /// Check if this event matches the given minimum impact level
     pub fn meets_impact(&self, min_impact: Impact) -> bool {
         self.impact >= min_impact
@@ -76,7 +108,21 @@ mod tests {
             actual: None,
             forecast: Some("1.5%".to_string()),
             previous: Some("1.2%".to_string()),
+            event_id: None,
         }
+    }
+
+    #[test]
+    fn detail_url_is_built_from_the_event_id() {
+        let mut ev = sample_event("USD", Impact::High);
+        assert_eq!(ev.detail_url(), None, "no id means no link");
+
+        ev.event_id = Some("150129".to_string());
+        assert_eq!(
+            ev.detail_url().as_deref(),
+            Some("https://www.forexfactory.com/calendar?event=150129"),
+            "the `?event=` form is the one that resolves — see `detail_url`"
+        );
     }
 
     #[test]

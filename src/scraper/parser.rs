@@ -128,11 +128,24 @@ impl CalendarParser {
         let forecast = self.extract_text(row, &self.forecast_selector);
         let previous = self.extract_text(row, &self.previous_selector);
 
+        // The row's own id. Already required by the row SELECTOR
+        // (`tr[data-event-id]`) and, until now, discarded — see
+        // `EconomicEvent::event_id` for what it is good for. Empty is
+        // normalised to None so a caller never has to distinguish "absent"
+        // from "present but blank".
+        let event_id = row
+            .value()
+            .attr("data-event-id")
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+            .map(str::to_owned);
+
         Some(EconomicEvent {
             name,
             currency,
             impact,
             datetime: datetime_local,
+            event_id,
             actual: if actual.is_empty() {
                 None
             } else {
@@ -261,6 +274,77 @@ mod tests {
     fn test_parser_creation() {
         let parser = CalendarParser::new();
         assert!(parser.is_ok());
+    }
+
+    /// One real calendar row, copied from a live `?week=this` fetch rather
+    /// than hand-written, so the selectors are exercised against the markup
+    /// Forex Factory actually serves — including the `calendar__event-title`
+    /// nested two spans deep, which a simplified fixture would not reproduce.
+    const REAL_ROW: &str = r#"<table><tbody>
+      <tr data-event-id="150129" data-day-dateline="1789826400" class="calendar__row">
+        <td class="calendar__cell calendar__date"><span class="date">Sun <span>Sep 20</span></span></td>
+        <td class="calendar__cell calendar__time">11:00am</td>
+        <td class="calendar__cell calendar__currency">CNY</td>
+        <td class="calendar__cell calendar__impact"><span class="icon icon--ff-impact-yel"></span></td>
+        <td class="calendar__cell calendar__event">
+          <div class="calendar__event-wrapper">
+            <span class="calendar__event-title-wrapper fadeout-end">
+              <span class="calendar__event-title">1-y Loan Prime Rate</span>
+            </span>
+          </div>
+        </td>
+        <td class="calendar__cell calendar__actual">3.00%</td>
+        <td class="calendar__cell calendar__forecast">3.00%</td>
+        <td class="calendar__cell calendar__previous">3.00%</td>
+      </tr>
+    </tbody></table>"#;
+
+    /// The event id is CAPTURED, not merely used to select the row.
+    ///
+    /// `tr[data-event-id]` was already the row selector, so the attribute has
+    /// always been present and its value was simply thrown away. It is the
+    /// only stable per-event handle Forex Factory exposes — there is no anchor
+    /// on the row (the detail view is JS-driven) — and
+    /// `forexfactory.com/calendar?event=<id>` redirects to the right day and
+    /// opens that event's detail panel. Verified live before this was written.
+    #[test]
+    fn parses_the_event_id() {
+        let parser = CalendarParser::new().expect("parser");
+        let base = NaiveDate::from_ymd_opt(2026, 9, 20).unwrap();
+        let events = parser.parse(REAL_ROW, base);
+
+        assert_eq!(events.len(), 1, "one row should parse to one event");
+        assert_eq!(
+            events[0].event_id.as_deref(),
+            Some("150129"),
+            "the id in `data-event-id` must reach the event"
+        );
+        // ...and the rest of the row still parses, so capturing the id did not
+        // disturb the existing extraction.
+        assert_eq!(events[0].name, "1-y Loan Prime Rate");
+        assert_eq!(events[0].currency, "CNY");
+    }
+
+    /// A row WITHOUT the attribute must still parse, with `event_id: None`.
+    ///
+    /// The field is `Option` precisely so a markup change upstream degrades to
+    /// "no deep link for this event" rather than dropping the event — losing a
+    /// 3-star print because its id moved would be far worse than losing a link.
+    #[test]
+    fn a_row_without_an_id_still_parses() {
+        // NOTE: the row selector itself requires `data-event-id`, so this
+        // asserts the OPTION handling in the constructor rather than a row the
+        // parser would see today. It is the guard that matters if the selector
+        // is ever widened.
+        let parser = CalendarParser::new().expect("parser");
+        let base = NaiveDate::from_ymd_opt(2026, 9, 20).unwrap();
+        let html = REAL_ROW.replace(r#"data-event-id="150129""#, r#"data-event-id="""#);
+        let events = parser.parse(&html, base);
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0].event_id, None,
+            "an empty id must be None, never Some(\"\")"
+        );
     }
 
     #[test]
