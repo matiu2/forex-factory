@@ -28,6 +28,14 @@ pub enum Error {
     #[error("Calendar table not found in response. Page structure may have changed.")]
     CalendarNotFound,
 
+    /// The requested calendar timezone is not a known IANA timezone.
+    #[error("Invalid calendar timezone: {0}")]
+    InvalidTimezone(String),
+
+    /// A calendar wall time cannot identify one instant in its requested zone.
+    #[error("Invalid calendar event time: {0}")]
+    InvalidEventTime(String),
+
     /// CSS selector parsing failed
     #[error("Invalid CSS selector: {0}")]
     InvalidSelector(String),

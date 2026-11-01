@@ -34,7 +34,7 @@ impl CalendarService {
     /// ```
     pub fn with_timezone(timezone: &str) -> Result<Self> {
         let fetcher = HttpCalendarFetcher::with_timezone(timezone)?;
-        let parser = CalendarParser::new()?;
+        let parser = CalendarParser::with_timezone(timezone)?;
 
         Ok(Self { fetcher, parser })
     }
@@ -61,7 +61,7 @@ impl CalendarService {
 
         while current_date <= end_date {
             let html = self.fetcher.fetch_date(current_date).await?;
-            let events = self.parser.parse(&html, current_date);
+            let events = self.parser.parse_checked(&html, current_date)?;
             all_events.extend(events);
 
             // Move to next week (7 days forward)
@@ -85,19 +85,47 @@ impl CalendarService {
     pub async fn get_today_events(&self) -> Result<Vec<EconomicEvent>> {
         let today = Local::now().date_naive();
         let html = self.fetcher.fetch_today().await?;
-        Ok(self.parser.parse(&html, today))
+        self.parser.parse_checked(&html, today)
     }
 
     /// Get events for this week.
     pub async fn get_week_events(&self) -> Result<Vec<EconomicEvent>> {
         let today = Local::now().date_naive();
         let html = self.fetcher.fetch_this_week().await?;
-        Ok(self.parser.parse(&html, today))
+        self.parser.parse_checked(&html, today)
     }
 
     /// Get events for a specific week containing the given date.
     pub async fn get_week_events_for(&self, date: NaiveDate) -> Result<Vec<EconomicEvent>> {
         let html = self.fetcher.fetch_date(date).await?;
-        Ok(self.parser.parse(&html, date))
+        self.parser.parse_checked(&html, date)
+    }
+}
+
+#[cfg(test)]
+mod timezone_tests {
+    use super::*;
+    use tracing_subscriber::prelude::*;
+    #[test]
+    fn service_requests_and_parses_the_same_timezone() {
+        tracing_subscriber::registry()
+            .with(tracing_error::ErrorLayer::default())
+            .with(tracing_subscriber::EnvFilter::from_default_env())
+            .with(tracing_subscriber::fmt::layer().with_test_writer())
+            .try_init()
+            .ok();
+        let service = CalendarService::with_timezone("UTC").unwrap();
+        let events = service
+            .parser
+            .parse_checked(
+                include_str!("../../tests/fixtures/utc-release.html"),
+                NaiveDate::from_ymd_opt(2026, 11, 6).unwrap(),
+            )
+            .unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0].datetime.with_timezone(&chrono::Utc).to_rfc3339(),
+            "2026-11-06T13:30:00+00:00"
+        );
     }
 }

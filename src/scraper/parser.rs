@@ -7,6 +7,7 @@ use crate::types::{EconomicEvent, Impact};
 
 /// Parses Forex Factory calendar HTML into structured events.
 pub struct CalendarParser {
+    timezone: Option<chrono_tz::Tz>,
     // Selectors are compiled once and reused
     row_selector: Selector,
     date_selector: Selector,
@@ -23,6 +24,7 @@ impl CalendarParser {
     /// Create a new parser with pre-compiled CSS selectors.
     pub fn new() -> Result<Self> {
         Ok(Self {
+            timezone: None,
             // Use data-event-id attribute to find actual event rows
             row_selector: Selector::parse("tr[data-event-id]")
                 .map_err(|e| Error::InvalidSelector(format!("{e:?}")))?,
@@ -46,9 +48,45 @@ impl CalendarParser {
         })
     }
 
+    /// Parse wall-clock times in the same IANA timezone requested from the source.
+    /// Returned events keep the existing Local timestamp representation while
+    /// preserving the correct absolute instant.
+    pub fn with_timezone(timezone: &str) -> Result<Self> {
+        let mut parser = Self::new()?;
+        parser.timezone = Some(
+            timezone
+                .parse()
+                .map_err(|_| Error::InvalidTimezone(timezone.into()))?,
+        );
+        Ok(parser)
+    }
+
+    /// Best-effort legacy parsing. Use parse_checked when completeness is required.
     /// Parse HTML content into a list of economic events.
     /// The `base_date` is used as fallback and to determine the year for date parsing.
     pub fn parse(&self, html: &str, base_date: NaiveDate) -> Vec<EconomicEvent> {
+        match self.parse_internal(html, base_date, false) {
+            Ok(events) => events,
+            Err(error) => {
+                tracing::error!(%error,"legacy calendar parse failed");
+                Vec::new()
+            }
+        }
+    }
+
+    /// Parse complete calendar evidence. Ambiguous or nonexistent explicit-zone
+    /// event times return an error, so consumers cannot approve an incomplete
+    /// calendar after silently losing a related release.
+    pub fn parse_checked(&self, html: &str, base_date: NaiveDate) -> Result<Vec<EconomicEvent>> {
+        self.parse_internal(html, base_date, true)
+    }
+
+    fn parse_internal(
+        &self,
+        html: &str,
+        base_date: NaiveDate,
+        checked: bool,
+    ) -> Result<Vec<EconomicEvent>> {
         debug!("Parsing HTML of {} bytes for date {base_date}", html.len());
         let document = Html::parse_document(html);
         let mut events = Vec::new();
@@ -63,18 +101,22 @@ impl CalendarParser {
             let event = self.parse_row(&row, &mut current_date, &mut current_time, reference_year);
 
             match event {
-                Some(e) => {
+                Ok(Some(e)) => {
                     debug!("Parsed event: {} ({}) - {}", e.name, e.currency, e.impact);
                     events.push(e);
                 }
-                None => {
+                Ok(None) => {
                     // Row had no parseable event (e.g., header row)
                     continue;
+                }
+                Err(error) if checked => return Err(error),
+                Err(error) => {
+                    tracing::warn!(%error,"legacy calendar parser skipped an invalid event")
                 }
             }
         }
 
-        events
+        Ok(events)
     }
 
     /// Parse a single table row into an event.
@@ -85,7 +127,7 @@ impl CalendarParser {
         current_date: &mut NaiveDate,
         current_time: &mut Option<NaiveTime>,
         reference_year: i32,
-    ) -> Option<EconomicEvent> {
+    ) -> Result<Option<EconomicEvent>> {
         // Update date if present in this row
         let date_text = self.extract_text(row, &self.date_selector);
         if let Some(parsed_date) = parse_date(&date_text, reference_year) {
@@ -97,13 +139,13 @@ impl CalendarParser {
 
         let currency = self.extract_text(row, &self.currency_selector);
         if currency.is_empty() {
-            return None;
+            return Ok(None);
         }
 
         let impact = self.extract_impact(row).unwrap_or(Impact::Low);
         let name = self.extract_text(row, &self.event_selector);
         if name.is_empty() {
-            return None;
+            return Ok(None);
         }
 
         // Update time if present in this row
@@ -118,11 +160,17 @@ impl CalendarParser {
 
         let time = current_time.unwrap_or(NaiveTime::from_hms_opt(0, 0, 0).unwrap());
         let datetime = NaiveDateTime::new(*current_date, time);
-        // Forex Factory times are shown in user's local timezone
-        let datetime_local = Local
-            .from_local_datetime(&datetime)
-            .single()
-            .unwrap_or_else(|| Local.from_utc_datetime(&datetime));
+        let datetime_local = match self.timezone {
+            Some(timezone) => timezone
+                .from_local_datetime(&datetime)
+                .single()
+                .ok_or_else(|| Error::InvalidEventTime(format!("{datetime} in {timezone}")))?
+                .with_timezone(&Local),
+            None => Local
+                .from_local_datetime(&datetime)
+                .single()
+                .unwrap_or_else(|| Local.from_utc_datetime(&datetime)),
+        };
 
         let actual = self.extract_text(row, &self.actual_selector);
         let forecast = self.extract_text(row, &self.forecast_selector);
@@ -140,7 +188,7 @@ impl CalendarParser {
             .filter(|id| !id.is_empty())
             .map(str::to_owned);
 
-        Some(EconomicEvent {
+        Ok(Some(EconomicEvent {
             name,
             currency,
             impact,
@@ -161,7 +209,7 @@ impl CalendarParser {
             } else {
                 Some(previous)
             },
-        })
+        }))
     }
 
     /// Extract text content from the first matching element.
