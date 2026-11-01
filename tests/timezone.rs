@@ -68,3 +68,95 @@ fn strict_timezone_parsing_rejects_partial_calendars_at_dst_transitions() {
         );
     }
 }
+
+#[test]
+fn high_impact_evidence_rejects_malformed_rows_alongside_valid_events() {
+    init();
+    let parser = CalendarParser::with_timezone("UTC").unwrap();
+    let date = NaiveDate::from_ymd_opt(2026, 11, 6).unwrap();
+    let valid = include_str!("fixtures/utc-release.html");
+    for damaged in [
+        valid.replace("icon--ff-impact-red", "unknown-impact"),
+        valid.replace("icon--ff-impact-red", "icon--ff-impact-yel-redesign"),
+        valid.replace("Fri Nov 6", "éééNov 6"),
+        valid.replace("1:30pm", "not a time"),
+        valid.replace("Fri Nov 6", "invalid date"),
+        valid.replace(">USD<", "><"),
+        valid.replace(">USD<", ">US D<"),
+        valid.replace(">USD<", ">USD ?<"),
+        valid.replace("Fri Nov 6", "Fri Oct 30"),
+        valid.replace("Employment release", ""),
+        valid.replace("1:30pm", "Tentative"),
+    ] {
+        assert!(
+            parser
+                .parse_high_impact_evidence(&format!("{valid}{damaged}"), date)
+                .is_err()
+        );
+    }
+    let no_time = valid.replace("1:30pm", "");
+    assert!(parser.parse_high_impact_evidence(&no_time, date).is_err());
+    let same_release = no_time
+        .replace("Fri Nov 6", "")
+        .replace("test-release", "simultaneous");
+    assert_eq!(
+        parser
+            .parse_high_impact_evidence(&format!("{valid}{same_release}"), date)
+            .unwrap()
+            .len(),
+        2
+    );
+    let global_low = valid
+        .replace(">USD<", ">All<")
+        .replace("icon--ff-impact-red", "icon--ff-impact-yel")
+        .replace("1:30pm", "All Day");
+    assert_eq!(
+        parser
+            .parse_high_impact_evidence(&format!("{valid}{global_low}"), date)
+            .unwrap()
+            .len(),
+        1
+    );
+    let global_high = valid.replace(">USD<", ">All<");
+    assert_eq!(
+        parser
+            .parse_high_impact_evidence(&global_high, date)
+            .unwrap()[0]
+            .currency,
+        "All"
+    );
+    assert!(
+        parser
+            .parse_high_impact_evidence(&global_high.replace("1:30pm", "Tentative"), date)
+            .is_err()
+    );
+    let holiday = valid
+        .replace("icon--ff-impact-red", "icon--ff-impact-gra")
+        .replace("1:30pm", "All Day");
+    let events = parser
+        .parse_high_impact_evidence(&format!("{valid}{holiday}"), date)
+        .unwrap();
+    assert_eq!(events.len(), 1);
+}
+
+#[test]
+fn strict_evidence_resolves_new_year_dates_within_the_requested_week() {
+    init();
+    let parser = CalendarParser::with_timezone("UTC").unwrap();
+    for (base, text, expected) in [
+        ((2026, 12, 31), "Fri Jan 1", "2027-01-01T13:30:00+00:00"),
+        ((2027, 1, 1), "Thu Dec 31", "2026-12-31T13:30:00+00:00"),
+    ] {
+        let html = include_str!("fixtures/utc-release.html").replace("Fri Nov 6", text);
+        let events = parser
+            .parse_high_impact_evidence(
+                &html,
+                NaiveDate::from_ymd_opt(base.0, base.1, base.2).unwrap(),
+            )
+            .unwrap();
+        assert_eq!(
+            events[0].datetime.with_timezone(&Utc).to_rfc3339(),
+            expected
+        );
+    }
+}

@@ -95,6 +95,16 @@ impl CalendarService {
         self.parser.parse_checked(&html, today)
     }
 
+    /// Fetch a week as strict high-impact entry-rule evidence. Display/query
+    /// parsing remains available through the ordinary event methods.
+    pub async fn get_week_high_impact_evidence_for(
+        &self,
+        date: NaiveDate,
+    ) -> Result<Vec<EconomicEvent>> {
+        let html = self.fetcher.fetch_date(date).await?;
+        self.parser.parse_high_impact_evidence(&html, date)
+    }
+
     /// Get events for a specific week containing the given date.
     pub async fn get_week_events_for(&self, date: NaiveDate) -> Result<Vec<EconomicEvent>> {
         let html = self.fetcher.fetch_date(date).await?;

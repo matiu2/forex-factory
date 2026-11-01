@@ -4,6 +4,7 @@ use tracing::debug;
 
 use crate::error::{Error, Result};
 use crate::types::{EconomicEvent, Impact};
+mod evidence;
 
 /// Parses Forex Factory calendar HTML into structured events.
 pub struct CalendarParser {
@@ -65,7 +66,7 @@ impl CalendarParser {
     /// Parse HTML content into a list of economic events.
     /// The `base_date` is used as fallback and to determine the year for date parsing.
     pub fn parse(&self, html: &str, base_date: NaiveDate) -> Vec<EconomicEvent> {
-        match self.parse_internal(html, base_date, false) {
+        match self.parse_internal(html, base_date, false, false) {
             Ok(events) => events,
             Err(error) => {
                 tracing::error!(%error,"legacy calendar parse failed");
@@ -78,7 +79,23 @@ impl CalendarParser {
     /// event times return an error, so consumers cannot approve an incomplete
     /// calendar after silently losing a related release.
     pub fn parse_checked(&self, html: &str, base_date: NaiveDate) -> Result<Vec<EconomicEvent>> {
-        self.parse_internal(html, base_date, true)
+        self.parse_internal(html, base_date, true, false)
+    }
+
+    /// Complete evidence for high-impact entry restrictions. Unknown fields,
+    /// missing timing and untimed high-impact releases fail rather than becoming
+    /// low-impact or midnight events. Recognized non-economic rows are skipped.
+    pub fn parse_high_impact_evidence(
+        &self,
+        html: &str,
+        base_date: NaiveDate,
+    ) -> Result<Vec<EconomicEvent>> {
+        if self.timezone.is_none() {
+            return Err(Error::InvalidCalendarEvidence(
+                "explicit source timezone is required".into(),
+            ));
+        }
+        self.parse_internal(html, base_date, true, true)
     }
 
     fn parse_internal(
@@ -86,19 +103,37 @@ impl CalendarParser {
         html: &str,
         base_date: NaiveDate,
         checked: bool,
+        evidence: bool,
     ) -> Result<Vec<EconomicEvent>> {
         debug!("Parsing HTML of {} bytes for date {base_date}", html.len());
         let document = Html::parse_document(html);
         let mut events = Vec::new();
         let mut current_date = base_date;
         let mut current_time: Option<NaiveTime> = None;
-        let reference_year = base_date.year();
+        let mut has_date = false;
 
         let row_count = document.select(&self.row_selector).count();
         debug!("Found {row_count} event rows in HTML");
 
+        if evidence && row_count == 0 {
+            return Err(Error::CalendarNotFound);
+        }
         for row in document.select(&self.row_selector) {
-            let event = self.parse_row(&row, &mut current_date, &mut current_time, reference_year);
+            if !self.extract_text(&row, &self.date_selector).is_empty() {
+                has_date = true;
+            }
+            if evidence && !has_date {
+                return Err(Error::InvalidCalendarEvidence(
+                    "first event has no explicit date".into(),
+                ));
+            }
+            let event = self.parse_row(
+                &row,
+                &mut current_date,
+                &mut current_time,
+                base_date,
+                evidence,
+            );
 
             match event {
                 Ok(Some(e)) => {
@@ -126,11 +161,22 @@ impl CalendarParser {
         row: &scraper::ElementRef,
         current_date: &mut NaiveDate,
         current_time: &mut Option<NaiveTime>,
-        reference_year: i32,
+        reference: NaiveDate,
+        evidence: bool,
     ) -> Result<Option<EconomicEvent>> {
         // Update date if present in this row
         let date_text = self.extract_text(row, &self.date_selector);
-        if let Some(parsed_date) = parse_date(&date_text, reference_year) {
+        let date = if evidence {
+            evidence::date(&date_text, reference)
+        } else {
+            parse_date(&date_text, reference.year())
+        };
+        if evidence && !date_text.is_empty() && date.is_none() {
+            return Err(Error::InvalidCalendarEvidence(
+                "unrecognized explicit event date".into(),
+            ));
+        }
+        if let Some(parsed_date) = date {
             debug!("Parsed date from row: {parsed_date}");
             *current_date = parsed_date;
             // Reset time when date changes - events on new day start fresh
@@ -138,19 +184,59 @@ impl CalendarParser {
         }
 
         let currency = self.extract_text(row, &self.currency_selector);
+        let currency = if evidence && currency.eq_ignore_ascii_case("All") {
+            // Forex Factory global events apply to every currency. Preserve the
+            // sentinel so a consumer cannot discard a timed high-impact release.
+            "All".to_owned()
+        } else if evidence {
+            currency
+                .parse::<crate::types::Currency>()
+                .map_err(|_| {
+                    Error::InvalidCalendarEvidence("missing or unknown event currency".into())
+                })?
+                .code()
+                .to_owned()
+        } else {
+            currency
+        };
         if currency.is_empty() {
-            return Ok(None);
+            return if evidence {
+                Err(Error::InvalidCalendarEvidence(
+                    "event currency is missing".into(),
+                ))
+            } else {
+                Ok(None)
+            };
         }
 
-        let impact = self.extract_impact(row).unwrap_or(Impact::Low);
+        let impact = if evidence {
+            let Some(impact) = evidence::impact(self, row)? else {
+                *current_time = None;
+                return Ok(None);
+            };
+            impact
+        } else {
+            self.extract_impact(row).unwrap_or(Impact::Low)
+        };
         let name = self.extract_text(row, &self.event_selector);
         if name.is_empty() {
-            return Ok(None);
+            return if evidence {
+                Err(Error::InvalidCalendarEvidence(
+                    "event name is missing".into(),
+                ))
+            } else {
+                Ok(None)
+            };
         }
 
         // Update time if present in this row
         let time_text = self.extract_text(row, &self.time_selector);
-        if !time_text.is_empty()
+        if evidence {
+            let Some(time) = evidence::time(&time_text, current_time, impact)? else {
+                return Ok(None);
+            };
+            *current_time = Some(time);
+        } else if !time_text.is_empty()
             && time_text != "All Day"
             && time_text != "Tentative"
             && let Some(parsed_time) = parse_time(&time_text)
@@ -248,7 +334,7 @@ fn parse_date(date_str: &str, reference_year: i32) -> Option<NaiveDate> {
             // Day name might be concatenated with month: "TueJan 13"
             let first = parts[0];
             if first.len() >= 6 {
-                (&first[3..], parts[1])
+                (first.get(3..)?, parts[1])
             } else {
                 return None;
             }

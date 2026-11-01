@@ -36,6 +36,10 @@ pub enum Error {
     #[error("Invalid calendar event time: {0}")]
     InvalidEventTime(String),
 
+    /// A source row cannot establish complete high-impact calendar evidence.
+    #[error("Incomplete calendar evidence: {0}")]
+    InvalidCalendarEvidence(String),
+
     /// CSS selector parsing failed
     #[error("Invalid CSS selector: {0}")]
     InvalidSelector(String),
