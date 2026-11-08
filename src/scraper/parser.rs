@@ -236,7 +236,7 @@ impl CalendarParser {
         }
 
         if evidence {
-            evidence::accepts(&cell, row_time.as_ref(), impact)?;
+            evidence::accepts(row_time.as_ref(), impact)?;
         }
         // An untimed row sits at midnight of its own day, marked untimed —
         // never at the time of a row above it.

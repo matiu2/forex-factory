@@ -85,13 +85,27 @@ fn high_impact_release_window_is_still_rejected() {
 }
 
 /// A row with an empty time cell shares the time of the row above. After a
-/// release window there is no such time, so a following high-impact row
-/// must not borrow one from further up.
+/// release window that is the window itself: the row below is untimed too,
+/// at any impact, and never borrows a time from further up.
 #[test]
-fn release_window_breaks_time_inheritance() {
+fn release_window_is_shared_by_a_blank_row_below() {
     init();
     let window = row("icon--ff-impact-yel", "9th-14th", "window");
-    let follower = row("icon--ff-impact-red", "", "follower").replace("Fri Nov 6", "");
+    let follower = row("icon--ff-impact-yel", "", "follower").replace("Fri Nov 6", "");
     let html = format!("{VALID}{window}{follower}");
-    assert!(parser().parse_high_impact_evidence(&html, date()).is_err());
+    let events = parser()
+        .parse_high_impact_evidence(&html, date())
+        .expect("a blank row under an untimed one is untimed, not an error");
+    assert_eq!(events.len(), 3);
+    assert_eq!(
+        events[2].timing,
+        EventTiming::Untimed {
+            label: "9th-14th".into()
+        }
+    );
+    assert_eq!(
+        events[2].datetime.with_timezone(&Utc).to_rfc3339(),
+        "2026-11-06T00:00:00+00:00"
+    );
+    assert_eq!(events, parser().parse(&html, date()));
 }

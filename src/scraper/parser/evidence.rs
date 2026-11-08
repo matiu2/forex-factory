@@ -1,5 +1,5 @@
 //! Validation for high-impact entry restrictions, separate from display parsing.
-use super::row_time::{Cell, RowTime};
+use super::row_time::RowTime;
 use super::*;
 
 pub(super) fn date(text: &str, reference: NaiveDate) -> Option<NaiveDate> {
@@ -39,23 +39,25 @@ pub(super) fn impact(
 
 /// Whether evidence accepts a row with this time, on top of the shared
 /// reading in [`row_time`](super::row_time). An error voids the whole week.
-pub(super) fn accepts(cell: &Cell, row_time: Option<&RowTime>, impact: Impact) -> Result<()> {
-    match (cell, row_time) {
-        (_, Some(RowTime::Clock(_))) => Ok(()),
-        (_, None) | (Cell::Inherit, Some(RowTime::Untimed(_))) => Err(
-            Error::InvalidCalendarEvidence("event time cannot be inherited from this day".into()),
-        ),
+pub(super) fn accepts(row_time: Option<&RowTime>, impact: Impact) -> Result<()> {
+    match row_time {
+        Some(RowTime::Clock(_)) => Ok(()),
+        // A blank cell under an untimed row is untimed too (see below); with
+        // nothing above it that day there is no time to share.
+        None => Err(Error::InvalidCalendarEvidence(
+            "event time cannot be inherited from this day".into(),
+        )),
         // Anything but a clock time means "no exact time": "All Day",
         // "Tentative", or a release window such as "9th-14th" or "Oct 17th".
         // Fatal on a high-impact row — there is nothing to build a window
         // around. Kept, marked untimed, otherwise, so one undated low-impact
         // release cannot void a week's evidence and evidence returns the
         // same event display parsing does.
-        (_, Some(RowTime::Untimed(label))) if impact == Impact::High => {
+        Some(RowTime::Untimed(label)) if impact == Impact::High => {
             Err(Error::InvalidCalendarEvidence(format!(
                 "high-impact event has no exact release time ({label:?})"
             )))
         }
-        (_, Some(RowTime::Untimed(_))) => Ok(()),
+        Some(RowTime::Untimed(_)) => Ok(()),
     }
 }
