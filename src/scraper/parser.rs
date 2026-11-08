@@ -64,6 +64,23 @@ impl CalendarParser {
         Ok(parser)
     }
 
+    /// 00:00 on `date` in the timezone this parser reads times in (the
+    /// host's when none was given) — where a `?week=<date>` page starts.
+    pub(crate) fn midnight(&self, date: NaiveDate) -> Result<chrono::DateTime<chrono::Utc>> {
+        let naive = date.and_time(NaiveTime::MIN);
+        let at = match self.timezone {
+            Some(timezone) => timezone
+                .from_local_datetime(&naive)
+                .earliest()
+                .map(|at| at.with_timezone(&chrono::Utc)),
+            None => Local
+                .from_local_datetime(&naive)
+                .earliest()
+                .map(|at| at.with_timezone(&chrono::Utc)),
+        };
+        at.ok_or_else(|| Error::InvalidEventTime(format!("{naive} has no midnight")))
+    }
+
     /// Best-effort legacy parsing. Use parse_checked when completeness is required.
     /// Parse HTML content into a list of economic events.
     /// The `base_date` is used as fallback and to determine the year for date parsing.

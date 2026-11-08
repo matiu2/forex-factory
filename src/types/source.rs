@@ -10,8 +10,14 @@ pub enum EventSource {
     ForexFactory,
 
     /// Use Forex Factory's weekly JSON export — the exact list The5ers
-    /// publishes as their economic calendar — whenever it covers the requested
-    /// week, and fall back to [`ForexFactory`](Self::ForexFactory) otherwise.
+    /// publishes as their economic calendar — whenever it covers ALL of the
+    /// requested span, and fall back to [`ForexFactory`](Self::ForexFactory)
+    /// otherwise. The export covers Sunday 00:00 to Sunday 00:00, New York
+    /// time ([`The5ersWeek`](crate::The5ersWeek)), so a seven-day
+    /// `?week=<date>` page in another timezone is almost never covered; ask
+    /// for a window instead
+    /// ([`get_high_impact_evidence_between`](crate::CalendarService::get_high_impact_evidence_between),
+    /// [`get_events_between`](crate::CalendarService::get_events_between)).
     ///
     /// Choose this when trading The5ers accounts: they count trades within
     /// ±2 minutes of a high-impact event as a breach, so the event times must

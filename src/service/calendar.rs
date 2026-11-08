@@ -1,9 +1,10 @@
-use chrono::{Local, NaiveDate};
+use chrono::{Datelike, Local, NaiveDate};
 use tracing::{info, warn};
 
 use crate::error::Result;
-use crate::scraper::{CalendarParser, FeedWeek, HttpCalendarFetcher};
+use crate::scraper::{CalendarParser, HttpCalendarFetcher, The5ersWeek};
 use crate::types::{EconomicEvent, EventQuery, EventSource, Impact};
+mod export;
 
 /// High-level service for fetching and querying economic events.
 pub struct CalendarService {
@@ -112,11 +113,8 @@ impl CalendarService {
     /// Get events for today.
     pub async fn get_today_events(&self) -> Result<Vec<EconomicEvent>> {
         let today = Local::now().date_naive();
-        if let Some(events) = self.feed_events_for(today).await {
-            let todays = events
-                .into_iter()
-                .filter(|e| e.datetime.date_naive() == today);
-            return Ok(todays.collect());
+        if let Some(events) = self.feed_events_for(today, 1).await {
+            return Ok(events);
         }
         let html = self.fetcher.fetch_today().await?;
         self.parser.parse_checked(&html, today)
@@ -125,7 +123,9 @@ impl CalendarService {
     /// Get events for this week.
     pub async fn get_week_events(&self) -> Result<Vec<EconomicEvent>> {
         let today = Local::now().date_naive();
-        if let Some(events) = self.feed_events_for(today).await {
+        // `?week=this` is Forex Factory's own Sunday-to-Saturday week.
+        let sunday = today - chrono::Days::new(today.weekday().num_days_from_sunday().into());
+        if let Some(events) = self.feed_events_for(sunday, 7).await {
             return Ok(events);
         }
         let html = self.fetcher.fetch_this_week().await?;
@@ -135,57 +135,64 @@ impl CalendarService {
     /// Fetch a week as strict high-impact entry-rule evidence. Display/query
     /// parsing remains available through the ordinary event methods.
     ///
-    /// With [`EventSource::PreferThe5ers`] the export answers when it covers
-    /// the week. Every export event carries an exact timestamp, "All Day"
+    /// The week is the seven days starting at `date` — what Forex Factory's
+    /// `?week=<date>` page shows. With [`EventSource::PreferThe5ers`] the
+    /// export answers only when it covers all seven days, which a page
+    /// rarely lines up with (the export runs Sunday to Sunday, New York
+    /// time); use [`get_high_impact_evidence_between`](Self::get_high_impact_evidence_between)
+    /// for a window inside the export's week. Every export event carries an exact timestamp, "All Day"
     /// ones included — the time The5ers publish — while the scraper marks
     /// those [`EventTiming::Untimed`](crate::EventTiming), with no instant.
     pub async fn get_week_high_impact_evidence_for(
         &self,
         date: NaiveDate,
     ) -> Result<Vec<EconomicEvent>> {
-        if let Some(events) = self.feed_events_for(date).await {
+        if let Some(events) = self.feed_events_for(date, 7).await {
             return Ok(events);
         }
-        let html = self.fetcher.fetch_date(date).await?;
-        self.parser.parse_high_impact_evidence(&html, date)
+        self.scrape_page(date, true).await
     }
 
-    /// Get events for a specific week containing the given date.
+    /// Get the events of the seven days starting at `date` (Forex Factory's
+    /// `?week=<date>` page).
     pub async fn get_week_events_for(&self, date: NaiveDate) -> Result<Vec<EconomicEvent>> {
         let feed = self.load_feed().await;
         self.week_events(feed.as_ref(), date).await
     }
 
-    /// The events of `date`'s week: from `feed` when it covers that week,
-    /// scraped otherwise.
+    /// The events of the page starting at `date`: from `feed` when it covers
+    /// all seven days, scraped otherwise.
     async fn week_events(
         &self,
-        feed: Option<&FeedWeek>,
+        feed: Option<&The5ersWeek>,
         date: NaiveDate,
     ) -> Result<Vec<EconomicEvent>> {
-        if let Some(events) = covered(feed, date) {
+        if let Some(events) = self.covered_days(feed, date, 7)? {
             return Ok(events);
         }
-        let html = self.fetcher.fetch_date(date).await?;
-        self.parser.parse_checked(&html, date)
+        self.scrape_page(date, false).await
     }
 
-    /// The export's events when the source wants them and the export covers
-    /// `date`'s week; `None` means scrape.
-    async fn feed_events_for(&self, date: NaiveDate) -> Option<Vec<EconomicEvent>> {
-        covered(self.load_feed().await.as_ref(), date)
+    /// The export's events for `days` days from `date` when the source wants
+    /// the export and it covers them all; `None` means scrape.
+    async fn feed_events_for(&self, date: NaiveDate, days: u64) -> Option<Vec<EconomicEvent>> {
+        let feed = self.load_feed().await;
+        self.covered_days(feed.as_ref(), date, days)
+            .unwrap_or_else(|error| {
+                warn!("cannot place {date} in the calendar timezone ({error}); scraping");
+                None
+            })
     }
 
     /// The weekly export, when the source wants it and it can be had.
     ///
     /// Never an error: an unreachable, rate-limited or empty export just
     /// means falling back to scraping, which is still Forex Factory's data.
-    async fn load_feed(&self) -> Option<FeedWeek> {
+    async fn load_feed(&self) -> Option<The5ersWeek> {
         if self.source != EventSource::PreferThe5ers {
             return None;
         }
-        let feed = self.fetcher.fetch_feed().await;
-        match feed.and_then(|json| FeedWeek::parse(&json)) {
+        match self.the5ers_week().await {
             Ok(feed) => feed,
             Err(error) => {
                 warn!("The5ers calendar export unavailable, falling back to scraping: {error}");
@@ -221,17 +228,6 @@ mod timezone_tests {
             "2026-11-06T13:30:00+00:00"
         );
     }
-}
-
-/// `feed`'s events if it covers `date`'s week. Logged when it does not, as
-/// the caller then falls back to scraping.
-fn covered(feed: Option<&FeedWeek>, date: NaiveDate) -> Option<Vec<EconomicEvent>> {
-    let feed = feed?;
-    if !feed.covers(date) {
-        info!("The5ers calendar export does not cover the week of {date}; scraping");
-        return None;
-    }
-    Some(feed.events().to_vec())
 }
 
 #[cfg(test)]

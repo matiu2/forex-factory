@@ -31,7 +31,7 @@ mod types;
 
 // Re-export public types
 pub use error::{Error, Result};
-pub use scraper::{CalendarParser, HttpCalendarFetcher};
+pub use scraper::{CalendarParser, HttpCalendarFetcher, The5ersWeek};
 pub use service::CalendarService;
 pub use types::{
     Currency, EconomicEvent, EventQuery, EventSource, EventTiming, Impact, resolve_currency,

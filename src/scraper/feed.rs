@@ -5,43 +5,82 @@
 //! in New York time. It only ever holds the current Forex Factory week
 //! (Sunday to Saturday, New York time).
 
-use chrono::{DateTime, Datelike, FixedOffset, Local, NaiveDate};
-use serde::Deserialize;
+use chrono::{DateTime, Datelike, FixedOffset, Local, NaiveDate, TimeZone, Utc};
+use chrono_tz::America::New_York;
+use serde::{Deserialize, Serialize};
 
-use crate::error::Result;
+use crate::error::{Error, Result};
 use crate::types::{EconomicEvent, EventTiming, Impact};
 
 /// URL of the export.
 pub const FEED_URL: &str = "https://nfs.faireconomy.media/ff_calendar_thisweek.json";
 
-/// The export's contents, with the week it covers.
-#[derive(Debug, Clone, PartialEq)]
-pub(crate) struct FeedWeek {
-    /// The Sunday the export's week starts on.
-    week_start: NaiveDate,
+/// The weekly export — the list The5ers publish — with the span it covers:
+/// its Forex Factory week, Sunday 00:00 to the next Sunday 00:00, New York
+/// time.
+///
+/// Serializable so a caller can cache it: the export is rate-limited hard
+/// (HTTP 429 after about five requests in a few minutes).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct The5ersWeek {
+    start: DateTime<Utc>,
+    end: DateTime<Utc>,
     events: Vec<EconomicEvent>,
 }
 
-impl FeedWeek {
+impl The5ersWeek {
     /// Parse the export. `Ok(None)` for an empty export: it covers no week.
     pub(crate) fn parse(json: &str) -> Result<Option<Self>> {
         let raw: Vec<FeedEvent> = serde_json::from_str(json)?;
-        let Some(week_start) = raw.iter().map(|e| e.date.date_naive()).min().map(sunday_of) else {
+        let Some(sunday) = raw.iter().map(|e| e.date.date_naive()).min().map(sunday_of) else {
             return Ok(None);
         };
+        let start = new_york_midnight(sunday)?;
+        let end = new_york_midnight(sunday + chrono::Days::new(7))?;
         let events = raw.into_iter().map(EconomicEvent::from).collect();
-        Ok(Some(Self { week_start, events }))
+        Ok(Some(Self { start, end, events }))
     }
 
-    /// Whether `date` falls in the export's week — i.e. whether the export,
-    /// rather than the scraper, can answer a request for `date`'s week.
-    pub(crate) fn covers(&self, date: NaiveDate) -> bool {
-        sunday_of(date) == self.week_start
+    /// Sunday 00:00 New York, the first instant the export covers.
+    pub fn start(&self) -> DateTime<Utc> {
+        self.start
     }
 
-    pub(crate) fn events(&self) -> &[EconomicEvent] {
+    /// The next Sunday 00:00 New York, the first instant it no longer covers.
+    pub fn end(&self) -> DateTime<Utc> {
+        self.end
+    }
+
+    /// Every event of the week.
+    pub fn events(&self) -> &[EconomicEvent] {
         &self.events
     }
+
+    /// Whether the export can answer for all of `[from, until)` by itself.
+    /// A window that runs outside the week, even by an hour, is not covered:
+    /// the export knows nothing of the rest, so it must not answer for it.
+    pub fn covers(&self, from: DateTime<Utc>, until: DateTime<Utc>) -> bool {
+        self.start <= from && from <= until && until <= self.end
+    }
+
+    /// The events in `[from, until)`.
+    pub fn events_between(&self, from: DateTime<Utc>, until: DateTime<Utc>) -> Vec<EconomicEvent> {
+        self.events
+            .iter()
+            .filter(|e| (from..until).contains(&e.datetime.with_timezone(&Utc)))
+            .cloned()
+            .collect()
+    }
+}
+
+/// 00:00 New York on `date`. Midnight always exists there: US clocks change
+/// at 02:00.
+fn new_york_midnight(date: NaiveDate) -> Result<DateTime<Utc>> {
+    New_York
+        .from_local_datetime(&date.and_time(chrono::NaiveTime::MIN))
+        .earliest()
+        .map(|at| at.with_timezone(&Utc))
+        .ok_or_else(|| Error::InvalidEventTime(format!("{date} 00:00 in New York")))
 }
 
 /// One element of the export, as served.
@@ -106,21 +145,17 @@ mod tests {
     /// verified identical to The5ers' calendar page at the time.
     const FIXTURE: &str = include_str!("../../tests/fixtures/ff_calendar_week_2026-11-01.json");
 
-    fn fixture() -> FeedWeek {
-        FeedWeek::parse(FIXTURE)
+    fn fixture() -> The5ersWeek {
+        The5ersWeek::parse(FIXTURE)
             .expect("fixture parses")
             .expect("fixture is not empty")
     }
 
-    fn find<'a>(week: &'a FeedWeek, currency: &str, name: &str) -> &'a EconomicEvent {
+    fn find<'a>(week: &'a The5ersWeek, currency: &str, name: &str) -> &'a EconomicEvent {
         week.events()
             .iter()
             .find(|e| e.currency == currency && e.name == name)
             .unwrap_or_else(|| panic!("{currency} {name} not in fixture"))
-    }
-
-    fn date(y: i32, m: u32, d: u32) -> NaiveDate {
-        NaiveDate::from_ymd_opt(y, m, d).unwrap()
     }
 
     #[test]
@@ -179,15 +214,60 @@ mod tests {
         );
     }
 
+    fn utc(y: i32, m: u32, d: u32, h: u32) -> DateTime<Utc> {
+        Utc.with_ymd_and_hms(y, m, d, h, 0, 0).unwrap()
+    }
+
+    /// Sunday 1 Nov 00:00 New York is still EDT (clocks go back at 02:00);
+    /// Sunday 8 Nov 00:00 is EST.
     #[test]
-    fn covers_its_sunday_to_saturday_week_only() {
+    fn spans_its_new_york_week() {
         let week = fixture();
-        assert!(!week.covers(date(2026, 10, 31)), "Saturday before");
-        assert!(week.covers(date(2026, 11, 1)), "Sunday start");
-        assert!(week.covers(date(2026, 11, 2)), "Monday");
-        assert!(week.covers(date(2026, 11, 7)), "Saturday end");
-        assert!(!week.covers(date(2026, 11, 8)), "next Sunday");
-        assert!(!week.covers(date(2026, 11, 9)), "next Monday");
+        assert_eq!(week.start(), utc(2026, 11, 1, 4));
+        assert_eq!(week.end(), utc(2026, 11, 8, 5));
+    }
+
+    #[test]
+    fn covers_only_windows_entirely_inside_its_week() {
+        let week = fixture();
+        assert!(week.covers(week.start(), week.end()), "the whole week");
+        assert!(
+            week.covers(utc(2026, 11, 3, 12), utc(2026, 11, 4, 12)),
+            "a day inside it"
+        );
+        assert!(
+            !week.covers(utc(2026, 11, 1, 0), utc(2026, 11, 8, 0)),
+            "a UTC Sunday page starts four hours before it"
+        );
+        assert!(
+            !week.covers(utc(2026, 11, 2, 0), utc(2026, 11, 9, 0)),
+            "a Monday page runs a day past it"
+        );
+        assert!(!week.covers(utc(2026, 11, 7, 12), utc(2026, 11, 8, 12)));
+        assert!(
+            !week.covers(utc(2026, 11, 4, 0), utc(2026, 11, 3, 0)),
+            "inverted"
+        );
+    }
+
+    #[test]
+    fn events_between_is_half_open() {
+        let week = fixture();
+        let nfp = utc(2026, 11, 6, 13) + chrono::Duration::minutes(30);
+        let names = |from, until| {
+            week.events_between(from, until)
+                .into_iter()
+                .map(|e| e.name)
+                .collect::<Vec<_>>()
+        };
+        assert!(
+            names(nfp, nfp + chrono::Duration::minutes(1))
+                .contains(&"Non-Farm Employment Change".to_owned())
+        );
+        assert!(
+            !names(nfp - chrono::Duration::minutes(1), nfp)
+                .contains(&"Non-Farm Employment Change".to_owned())
+        );
     }
 
     /// A week with no Sunday events still starts on the Sunday.
@@ -195,10 +275,9 @@ mod tests {
     fn week_starts_on_sunday_even_without_sunday_events() {
         let json = r#"[{"title":"CPI m/m","country":"USD","date":"2026-11-11T08:30:00-05:00",
             "impact":"High","forecast":"0.3%","previous":"0.2%"}]"#;
-        let week = FeedWeek::parse(json).unwrap().unwrap();
-        assert!(week.covers(date(2026, 11, 8)));
-        assert!(week.covers(date(2026, 11, 14)));
-        assert!(!week.covers(date(2026, 11, 7)));
+        let week = The5ersWeek::parse(json).unwrap().unwrap();
+        assert_eq!(week.start(), utc(2026, 11, 8, 5));
+        assert_eq!(week.end(), utc(2026, 11, 15, 5));
     }
 
     /// The week is fixed in New York time: a Saturday-evening New York event
@@ -207,19 +286,26 @@ mod tests {
     fn week_is_judged_in_new_york_time() {
         let json = r#"[{"title":"Late","country":"USD","date":"2026-11-07T21:00:00-05:00",
             "impact":"Low","forecast":"","previous":""}]"#;
-        let week = FeedWeek::parse(json).unwrap().unwrap();
-        assert!(week.covers(date(2026, 11, 1)));
-        assert!(!week.covers(date(2026, 11, 8)));
+        let week = The5ersWeek::parse(json).unwrap().unwrap();
+        assert_eq!(week.start(), utc(2026, 11, 1, 4));
+    }
+
+    /// Survives a cache round trip.
+    #[test]
+    fn serializes_for_caching() {
+        let week = fixture();
+        let json = serde_json::to_string(&week).unwrap();
+        assert_eq!(serde_json::from_str::<The5ersWeek>(&json).unwrap(), week);
     }
 
     #[test]
     fn empty_export_covers_nothing() {
-        assert_eq!(FeedWeek::parse("[]").unwrap(), None);
+        assert_eq!(The5ersWeek::parse("[]").unwrap(), None);
     }
 
     /// When rate-limited the endpoint answers with an HTML page, not JSON.
     #[test]
     fn non_json_is_an_error() {
-        assert!(FeedWeek::parse("<html>Request Denied</html>").is_err());
+        assert!(The5ersWeek::parse("<html>Request Denied</html>").is_err());
     }
 }

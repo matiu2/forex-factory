@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `EventSource::PreferThe5ers`: read Forex Factory's weekly JSON export — the
+  list The5ers publish — where it covers the request (a8d7db6).
+- `The5ersWeek` (serializable, for caching) with `start()`/`end()` (Sunday
+  00:00 to Sunday 00:00 New York), `covers(from, until)`, `events_between`;
+  `CalendarService::the5ers_week()`.
+- Window methods: `get_events_between`, `get_high_impact_evidence_between`,
+  and `high_impact_evidence_between(Some(&week), ..)` for a cached export.
+- `EconomicEvent::timing: EventTiming` (`Exact` | `Untimed { label }`) and
+  `has_exact_time()`.
+
+### Changed
+
+- **Breaking:** `EconomicEvent` has a new field `timing` (`serde(default)`,
+  omitted when `Exact`, so old JSON loads unchanged). Struct literals must add
+  `timing: EventTiming::Exact`.
+- One reading of a row's time cell for display and evidence parsing. Untimed
+  rows ("All Day", "Tentative", "Day 2", "9th-14th", "Oct 17th") are marked
+  `Untimed` at midnight of their own day instead of borrowing the previous
+  row's time; a blank cell shares the row above, untimed included.
+- Strict evidence keeps untimed rows, marked, at any impact; only an
+  unrecognized time on a high-impact row is still an error. A week with an
+  all-day high-impact event (elections) is no longer void.
+- `PreferThe5ers` uses the export only for a span it covers entirely.
+
+### Fixed
+
+- Strict evidence for the week of 2026-11-09 failed: low-impact release
+  windows in the time cell (d33d928), and — once past that — the date check
+  assumed Sunday-to-Saturday pages, while `?week=<date>` is the seven days
+  from `date`, so every non-Sunday request failed on its last days.
+
 ## [0.3.0] - 2026-09-26
 
 ### Added

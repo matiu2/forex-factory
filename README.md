@@ -119,12 +119,24 @@ event times exactly as The5ers publish them (they count trades within ±2
 minutes of a high-impact event as a breach), choose `EventSource::PreferThe5ers`:
 
 ```rust
-let service = CalendarService::new()?.with_source(EventSource::PreferThe5ers);
-let events = service.get_week_events_for(date).await?;
+let service = CalendarService::with_timezone("UTC")?.with_source(EventSource::PreferThe5ers);
+let events = service.get_events_between(from, until).await?;
+// strict, for a news rule:
+let evidence = service.get_high_impact_evidence_between(from, until).await?;
 ```
 
-The export only holds the current week, so other weeks — and the export being
-unreachable, rate-limited, or not yet rolled over — fall back to scraping. The
+The export only holds the current Forex Factory week — Sunday 00:00 to Sunday
+00:00, New York time — and answers only a window it covers entirely. Other
+windows (past weeks, a window crossing the week boundary, a seven-day
+`?week=<date>` page in another timezone), and the export being unreachable,
+rate-limited, or not yet rolled over, are scraped. The export is rate-limited
+hard (HTTP 429 after about five requests in a few minutes): a caller that asks
+often should cache `service.the5ers_week()` and pass it to
+`high_impact_evidence_between(Some(&week), from, until)`.
+
+`?week=<date>` pages are the seven days starting at `date`, and
+`get_week_events_for(date)` / `get_week_high_impact_evidence_for(date)`
+return exactly those days. The
 two agree on timed events; they differ on untimed ones ("All Day",
 "Tentative", "9th-14th"), which the export gives its own timestamp and the
 scraper marks `EventTiming::Untimed` (no instant; `datetime` is the row's
