@@ -1,4 +1,5 @@
 //! Validation for high-impact entry restrictions, separate from display parsing.
+use super::row_time::{Cell, RowTime};
 use super::*;
 
 pub(super) fn date(text: &str, reference: NaiveDate) -> Option<NaiveDate> {
@@ -36,31 +37,24 @@ pub(super) fn impact(
     }
 }
 
-pub(super) fn time(
-    text: &str,
-    previous: &mut Option<NaiveTime>,
-    impact: Impact,
-) -> Result<Option<NaiveTime>> {
-    if text.is_empty() {
-        return previous.map(Some).ok_or_else(|| {
-            Error::InvalidCalendarEvidence("event time cannot be inherited from this day".into())
-        });
-    }
-    // Anything but a clock time means "no exact time": "All Day",
-    // "Tentative", or a release window such as "9th-14th" or "Oct 17th".
-    // Fatal on a high-impact row — there is nothing to build a window around
-    // — and skipped otherwise, so one undated low-impact release cannot void
-    // a week's evidence. Either way, rows below must not inherit a time.
-    let Some(time) = parse_time(text) else {
-        *previous = None;
-        return if impact == Impact::High {
+/// Whether evidence keeps a row with this time, on top of the shared reading
+/// in [`row_time`](super::row_time). Errors void the whole week.
+pub(super) fn accepts(cell: &Cell, row_time: Option<&RowTime>, impact: Impact) -> Result<bool> {
+    match (cell, row_time) {
+        (_, Some(RowTime::Clock(_))) => Ok(true),
+        (Cell::Inherit, None | Some(RowTime::Untimed(_))) => Err(Error::InvalidCalendarEvidence(
+            "event time cannot be inherited from this day".into(),
+        )),
+        // Anything but a clock time means "no exact time": "All Day",
+        // "Tentative", or a release window such as "9th-14th" or "Oct 17th".
+        // Fatal on a high-impact row — there is nothing to build a window
+        // around — and skipped otherwise, so one undated low-impact release
+        // cannot void a week's evidence.
+        (_, Some(RowTime::Untimed(label))) if impact == Impact::High => {
             Err(Error::InvalidCalendarEvidence(format!(
-                "high-impact event has no exact release time ({text:?})"
+                "high-impact event has no exact release time ({label:?})"
             )))
-        } else {
-            Ok(None)
-        };
-    };
-    *previous = Some(time);
-    Ok(Some(time))
+        }
+        (_, _) => Ok(false),
+    }
 }

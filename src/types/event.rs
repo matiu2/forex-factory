@@ -1,7 +1,7 @@
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 
-use super::{Currency, Impact};
+use super::{Currency, EventTiming, Impact};
 
 /// An economic event from the Forex Factory calendar.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -15,8 +15,13 @@ pub struct EconomicEvent {
     /// Impact level on the market
     pub impact: Impact,
 
-    /// Scheduled date and time of the event (local timezone)
+    /// Scheduled date and time of the event (local timezone). Only a release
+    /// instant when [`timing`](Self::timing) is `Exact`.
     pub datetime: DateTime<Local>,
+
+    /// Whether `datetime` is a real release instant — see [`EventTiming`].
+    #[serde(default, skip_serializing_if = "EventTiming::is_exact")]
+    pub timing: EventTiming,
 
     /// Actual value (if released)
     pub actual: Option<String>,
@@ -59,6 +64,12 @@ impl EconomicEvent {
         self.event_id
             .as_deref()
             .map(|id| format!("https://www.forexfactory.com/calendar?event={id}"))
+    }
+
+    /// Whether `datetime` is the release instant (not an "All Day",
+    /// "Tentative" or release-window placeholder).
+    pub fn has_exact_time(&self) -> bool {
+        self.timing.is_exact()
     }
 
     /// Check if this event matches the given minimum impact level
@@ -105,6 +116,7 @@ mod tests {
             currency: currency.to_string(),
             impact,
             datetime: Local.with_ymd_and_hms(2025, 6, 4, 12, 0, 0).unwrap(),
+            timing: EventTiming::Exact,
             actual: None,
             forecast: Some("1.5%".to_string()),
             previous: Some("1.2%".to_string()),

@@ -7,7 +7,7 @@
 //! Sunday 15's rows, which the strict date check used to reject as "outside
 //! the week".
 use chrono::{NaiveDate, Utc};
-use forex_factory::{CalendarParser, EconomicEvent, Impact};
+use forex_factory::{CalendarParser, EconomicEvent, EventTiming, Impact};
 use tracing_subscriber::prelude::*;
 
 const PAGE: &str = include_str!("fixtures/ff_week_nov9_2026_utc.html");
@@ -75,4 +75,63 @@ fn a_date_before_the_requested_day_is_not_the_requested_page() {
     // page requested for Tuesday.
     let tuesday = NaiveDate::from_ymd_opt(2026, 11, 10).unwrap();
     assert!(parser.parse_high_impact_evidence(PAGE, tuesday).is_err());
+}
+
+fn untimed(label: &str) -> EventTiming {
+    EventTiming::Untimed {
+        label: label.into(),
+    }
+}
+
+/// Display parsing never borrows a time for a row whose cell is not a clock
+/// time: the event is marked untimed and sits at midnight of its own day.
+#[test]
+fn lenient_parsing_marks_untimed_rows_instead_of_inventing_a_time() {
+    init();
+    let parser = CalendarParser::with_timezone("UTC").unwrap();
+    for events in [
+        parser.parse(PAGE, monday()),
+        parser.parse_checked(PAGE, monday()).unwrap(),
+    ] {
+        let find = |currency: &str, name: &str| {
+            events
+                .iter()
+                .find(|e| e.currency == currency && e.name == name)
+                .unwrap_or_else(|| panic!("{currency} {name} missing"))
+                .clone()
+        };
+        for (currency, name, label, day) in [
+            ("CNY", "M2 Money Supply y/y", "9th-14th", "2026-11-09"),
+            ("EUR", "ECOFIN Meetings", "All Day", "2026-11-09"),
+            ("CNY", "Trade Balance", "Tentative", "2026-11-10"),
+            ("USD", "Bank Holiday", "All Day", "2026-11-11"),
+        ] {
+            let event = find(currency, name);
+            assert_eq!(event.timing, untimed(label), "{name}");
+            assert!(!event.has_exact_time(), "{name}");
+            assert_eq!(utc(&event), format!("{day}T00:00:00+00:00"), "{name}");
+        }
+        let cpi = find("USD", "CPI m/m");
+        assert_eq!(cpi.timing, EventTiming::Exact);
+        assert_eq!(utc(&cpi), "2026-11-10T13:30:00+00:00");
+        assert!(events.iter().any(|e| e.timing == untimed("Oct 17th")));
+    }
+}
+
+/// Strict and display parsing read time cells the same way: every event the
+/// strict parser returns comes out of the display parser identical.
+#[test]
+fn lenient_and_strict_agree_on_every_strict_event() {
+    let strict = evidence();
+    init();
+    let parser = CalendarParser::with_timezone("UTC").unwrap();
+    let lenient = parser.parse(PAGE, monday());
+    for event in &strict {
+        assert!(
+            lenient.contains(event),
+            "{} {} differs",
+            event.currency,
+            event.name
+        );
+    }
 }

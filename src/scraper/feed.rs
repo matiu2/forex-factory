@@ -9,7 +9,7 @@ use chrono::{DateTime, Datelike, FixedOffset, Local, NaiveDate};
 use serde::Deserialize;
 
 use crate::error::Result;
-use crate::types::{EconomicEvent, Impact};
+use crate::types::{EconomicEvent, EventTiming, Impact};
 
 /// URL of the export.
 pub const FEED_URL: &str = "https://nfs.faireconomy.media/ff_calendar_thisweek.json";
@@ -66,6 +66,9 @@ impl From<FeedEvent> for EconomicEvent {
             currency: e.country,
             impact: feed_impact(&e.impact),
             datetime: e.date.with_timezone(&Local),
+            // The export's timestamp is what The5ers publish, untimed rows
+            // included, so it is the instant their news rule is judged by.
+            timing: EventTiming::Exact,
             actual: None,
             forecast: non_empty(e.forecast),
             previous: non_empty(e.previous),

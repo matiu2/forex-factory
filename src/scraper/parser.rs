@@ -3,8 +3,10 @@ use scraper::{Html, Selector};
 use tracing::debug;
 
 use crate::error::{Error, Result};
-use crate::types::{EconomicEvent, Impact};
+use crate::types::{EconomicEvent, EventTiming, Impact};
 mod evidence;
+mod row_time;
+use row_time::RowTime;
 
 /// Parses Forex Factory calendar HTML into structured events.
 pub struct CalendarParser {
@@ -109,7 +111,7 @@ impl CalendarParser {
         let document = Html::parse_document(html);
         let mut events = Vec::new();
         let mut current_date = base_date;
-        let mut current_time: Option<NaiveTime> = None;
+        let mut current_time: Option<RowTime> = None;
         let mut has_date = false;
 
         let row_count = document.select(&self.row_selector).count();
@@ -160,7 +162,7 @@ impl CalendarParser {
         &self,
         row: &scraper::ElementRef,
         current_date: &mut NaiveDate,
-        current_time: &mut Option<NaiveTime>,
+        current_time: &mut Option<RowTime>,
         reference: NaiveDate,
         evidence: bool,
     ) -> Result<Option<EconomicEvent>> {
@@ -209,9 +211,13 @@ impl CalendarParser {
             };
         }
 
+        // Read on every row, holidays included, so a blank cell below any row
+        // shares that row's time.
+        let time_text = self.extract_text(row, &self.time_selector);
+        let cell = row_time::classify(&time_text);
+        let row_time = row_time::resolve(&cell, current_time);
         let impact = if evidence {
             let Some(impact) = evidence::impact(self, row)? else {
-                *current_time = None;
                 return Ok(None);
             };
             impact
@@ -229,22 +235,21 @@ impl CalendarParser {
             };
         }
 
-        // Update time if present in this row
-        let time_text = self.extract_text(row, &self.time_selector);
-        if evidence {
-            let Some(time) = evidence::time(&time_text, current_time, impact)? else {
-                return Ok(None);
-            };
-            *current_time = Some(time);
-        } else if !time_text.is_empty()
-            && time_text != "All Day"
-            && time_text != "Tentative"
-            && let Some(parsed_time) = parse_time(&time_text)
-        {
-            *current_time = Some(parsed_time);
+        if evidence && !evidence::accepts(&cell, row_time.as_ref(), impact)? {
+            return Ok(None);
         }
-
-        let time = current_time.unwrap_or(NaiveTime::from_hms_opt(0, 0, 0).unwrap());
+        // An untimed row sits at midnight of its own day, marked untimed —
+        // never at the time of a row above it.
+        let (time, timing) = match row_time {
+            Some(RowTime::Clock(time)) => (time, EventTiming::Exact),
+            Some(RowTime::Untimed(label)) => (NaiveTime::MIN, EventTiming::Untimed { label }),
+            None => (
+                NaiveTime::MIN,
+                EventTiming::Untimed {
+                    label: String::new(),
+                },
+            ),
+        };
         let datetime = NaiveDateTime::new(*current_date, time);
         let datetime_local = match self.timezone {
             Some(timezone) => timezone
@@ -279,6 +284,7 @@ impl CalendarParser {
             currency,
             impact,
             datetime: datetime_local,
+            timing,
             event_id,
             actual: if actual.is_empty() {
                 None
