@@ -37,24 +37,25 @@ pub(super) fn impact(
     }
 }
 
-/// Whether evidence keeps a row with this time, on top of the shared reading
-/// in [`row_time`](super::row_time). Errors void the whole week.
-pub(super) fn accepts(cell: &Cell, row_time: Option<&RowTime>, impact: Impact) -> Result<bool> {
+/// Whether evidence accepts a row with this time, on top of the shared
+/// reading in [`row_time`](super::row_time). An error voids the whole week.
+pub(super) fn accepts(cell: &Cell, row_time: Option<&RowTime>, impact: Impact) -> Result<()> {
     match (cell, row_time) {
-        (_, Some(RowTime::Clock(_))) => Ok(true),
-        (Cell::Inherit, None | Some(RowTime::Untimed(_))) => Err(Error::InvalidCalendarEvidence(
-            "event time cannot be inherited from this day".into(),
-        )),
+        (_, Some(RowTime::Clock(_))) => Ok(()),
+        (_, None) | (Cell::Inherit, Some(RowTime::Untimed(_))) => Err(
+            Error::InvalidCalendarEvidence("event time cannot be inherited from this day".into()),
+        ),
         // Anything but a clock time means "no exact time": "All Day",
         // "Tentative", or a release window such as "9th-14th" or "Oct 17th".
         // Fatal on a high-impact row — there is nothing to build a window
-        // around — and skipped otherwise, so one undated low-impact release
-        // cannot void a week's evidence.
+        // around. Kept, marked untimed, otherwise, so one undated low-impact
+        // release cannot void a week's evidence and evidence returns the
+        // same event display parsing does.
         (_, Some(RowTime::Untimed(label))) if impact == Impact::High => {
             Err(Error::InvalidCalendarEvidence(format!(
                 "high-impact event has no exact release time ({label:?})"
             )))
         }
-        (_, _) => Ok(false),
+        (_, Some(RowTime::Untimed(_))) => Ok(()),
     }
 }

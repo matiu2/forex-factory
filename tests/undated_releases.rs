@@ -9,7 +9,7 @@
 //! They mean what "All Day" and "Tentative" mean: no exact time. Fatal on a
 //! high-impact row, skipped otherwise.
 use chrono::{NaiveDate, Utc};
-use forex_factory::CalendarParser;
+use forex_factory::{CalendarParser, EventTiming};
 use tracing_subscriber::prelude::*;
 
 fn init() {
@@ -40,8 +40,10 @@ fn row(impact_class: &str, time_text: &str, id: &str) -> String {
         .replace("test-release", id)
 }
 
+/// Kept, marked untimed — the same event display parsing returns, so strict
+/// and display parsing agree on the week's events.
 #[test]
-fn low_and_medium_release_windows_are_skipped() {
+fn low_and_medium_release_windows_are_kept_marked_untimed() {
     init();
     for impact in ["icon--ff-impact-yel", "icon--ff-impact-ora"] {
         for window in ["9th-14th", "Oct 17th"] {
@@ -49,11 +51,23 @@ fn low_and_medium_release_windows_are_skipped() {
             let events = parser()
                 .parse_high_impact_evidence(&html, date())
                 .unwrap_or_else(|e| panic!("{impact} {window:?} rejected the week: {e}"));
-            assert_eq!(events.len(), 1, "{impact} {window:?}: only the timed row");
+            assert_eq!(events.len(), 2, "{impact} {window:?}");
             assert_eq!(
                 events[0].datetime.with_timezone(&Utc).to_rfc3339(),
                 "2026-11-06T13:30:00+00:00"
             );
+            assert!(events[0].has_exact_time());
+            assert_eq!(
+                events[1].timing,
+                EventTiming::Untimed {
+                    label: window.into()
+                }
+            );
+            assert_eq!(
+                events[1].datetime.with_timezone(&Utc).to_rfc3339(),
+                "2026-11-06T00:00:00+00:00"
+            );
+            assert_eq!(events, parser().parse(&html, date()));
         }
     }
 }

@@ -115,7 +115,8 @@ fn high_impact_evidence_rejects_malformed_rows_alongside_valid_events() {
             .parse_high_impact_evidence(&format!("{valid}{global_low}"), date)
             .unwrap()
             .len(),
-        1
+        2,
+        "an untimed low-impact row is kept, marked untimed"
     );
     let global_high = valid.replace(">USD<", ">All<");
     assert_eq!(
