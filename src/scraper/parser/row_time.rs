@@ -42,6 +42,37 @@ pub(super) fn resolve(cell: &Cell, current: &mut Option<RowTime>) -> Option<RowT
     current.clone()
 }
 
+/// Whether an untimed label is one of the forms Forex Factory writes for a
+/// release with no exact time: "All Day", "Tentative", "Day 2", a day range
+/// such as "9th-14th", or a date such as "Oct 17th". Anything else might be a
+/// garbled clock time, which evidence must not take for "untimed".
+pub(super) fn is_known_untimed(label: &str) -> bool {
+    matches!(label, "All Day" | "Tentative")
+        || label
+            .strip_prefix("Day ")
+            .is_some_and(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+        || label
+            .split_once('-')
+            .is_some_and(|(from, to)| ordinal_day(from) && ordinal_day(to))
+        || label
+            .split_once(' ')
+            .is_some_and(|(month, day)| MONTHS.contains(&month) && ordinal_day(day))
+}
+
+const MONTHS: [&str; 12] = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
+/// "1st", "22nd", "3rd", "14th" — a day of the month, 1 to 31.
+fn ordinal_day(text: &str) -> bool {
+    let digits = text.trim_end_matches(|c: char| c.is_ascii_alphabetic());
+    let suffix = &text[digits.len()..];
+    matches!(suffix, "st" | "nd" | "rd" | "th")
+        && digits
+            .parse::<u32>()
+            .is_ok_and(|day| (1..=31).contains(&day))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -80,5 +111,35 @@ mod tests {
             Some(RowTime::Untimed("Tentative".into())),
             "a blank row under an untimed one is untimed, never an earlier time"
         );
+    }
+
+    #[test]
+    fn known_untimed_forms() {
+        for label in [
+            "All Day",
+            "Tentative",
+            "Day 1",
+            "Day 12",
+            "9th-14th",
+            "1st-3rd",
+            "Oct 17th",
+            "Nov 2nd",
+        ] {
+            assert!(is_known_untimed(label), "{label}");
+        }
+        for label in [
+            "",
+            "Day",
+            "Day x",
+            "13:3O",
+            "soon",
+            "9th-",
+            "Oct 32nd",
+            "Okt 17th",
+            "17th",
+            "1:30 pm EST",
+        ] {
+            assert!(!is_known_untimed(label), "{label}");
+        }
     }
 }

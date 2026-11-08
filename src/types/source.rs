@@ -17,7 +17,8 @@ pub enum EventSource {
     /// ±2 minutes of a high-impact event as a breach, so the event times must
     /// be *theirs*. The two outputs agree on timed events, but not on "All
     /// Day" ones: the export gives those a concrete (and seemingly arbitrary)
-    /// timestamp, while the scraper borrows the previous row's time.
+    /// timestamp, while the scraper marks them
+    /// [`EventTiming::Untimed`](crate::EventTiming) with no instant.
     ///
     /// The export only ever holds the current week and rolls over some time
     /// after the week ends, so other weeks, an unreachable or rate-limited

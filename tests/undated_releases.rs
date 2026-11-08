@@ -6,8 +6,9 @@
 //! Weekly Employment Change), and strict evidence parsing rejected the whole
 //! week over them — blocking high-impact evidence for every currency.
 //!
-//! They mean what "All Day" and "Tentative" mean: no exact time. Fatal on a
-//! high-impact row, skipped otherwise.
+//! They mean what "All Day" and "Tentative" mean: no exact time. Such rows
+//! are kept, marked untimed, at any impact; unrecognised text is an error on
+//! a high-impact row only.
 use chrono::{NaiveDate, Utc};
 use forex_factory::{CalendarParser, EventTiming};
 use tracing_subscriber::prelude::*;
@@ -72,14 +73,39 @@ fn low_and_medium_release_windows_are_kept_marked_untimed() {
     }
 }
 
+/// A high-impact row in a known untimed form (elections are "All Day") is
+/// kept, marked untimed: it opens no news window from the scrape, and the
+/// week's timed releases stay usable as evidence. Text that is no known
+/// form is still an error on a high-impact row — it might be a garbled time.
 #[test]
-fn high_impact_release_window_is_still_rejected() {
+fn high_impact_untimed_rows_are_kept_marked_and_unknown_text_is_rejected() {
     init();
-    for window in ["9th-14th", "Oct 17th"] {
-        let html = format!("{VALID}{}", row("icon--ff-impact-red", window, "window"));
+    for label in [
+        "All Day",
+        "Tentative",
+        "Day 2",
+        "9th-14th",
+        "Oct 17th",
+        "1st-3rd",
+    ] {
+        let html = format!("{VALID}{}", row("icon--ff-impact-red", label, "untimed"));
+        let events = parser()
+            .parse_high_impact_evidence(&html, date())
+            .unwrap_or_else(|e| panic!("high-impact {label:?} rejected the week: {e}"));
+        assert_eq!(events.len(), 2, "{label:?}");
+        assert_eq!(
+            events[1].timing,
+            EventTiming::Untimed {
+                label: label.into()
+            }
+        );
+        assert_eq!(events, parser().parse(&html, date()));
+    }
+    for garbled in ["13:3O", "1:30 pm EST", "soon", "Day", "Oct 32nd"] {
+        let html = format!("{VALID}{}", row("icon--ff-impact-red", garbled, "garbled"));
         assert!(
             parser().parse_high_impact_evidence(&html, date()).is_err(),
-            "a high-impact {window:?} has no exact time to build a window around"
+            "{garbled:?} on a high-impact row"
         );
     }
 }
@@ -91,7 +117,7 @@ fn high_impact_release_window_is_still_rejected() {
 fn release_window_is_shared_by_a_blank_row_below() {
     init();
     let window = row("icon--ff-impact-yel", "9th-14th", "window");
-    let follower = row("icon--ff-impact-yel", "", "follower").replace("Fri Nov 6", "");
+    let follower = row("icon--ff-impact-red", "", "follower").replace("Fri Nov 6", "");
     let html = format!("{VALID}{window}{follower}");
     let events = parser()
         .parse_high_impact_evidence(&html, date())

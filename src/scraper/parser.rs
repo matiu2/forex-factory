@@ -84,9 +84,12 @@ impl CalendarParser {
         self.parse_internal(html, base_date, true, false)
     }
 
-    /// Complete evidence for high-impact entry restrictions. Unknown fields,
-    /// missing timing and untimed high-impact releases fail rather than becoming
-    /// low-impact or midnight events. Recognized non-economic rows are skipped.
+    /// Complete evidence for high-impact entry restrictions. Unknown fields and
+    /// missing or unrecognized timing fail rather than becoming low-impact or
+    /// midnight events. Rows with no release time in a known form ("All Day",
+    /// "Tentative", "Day 2", "9th-14th", "Oct 17th") are kept, marked
+    /// [`EventTiming::Untimed`], at any impact. Recognized non-economic
+    /// (holiday) rows are skipped.
     pub fn parse_high_impact_evidence(
         &self,
         html: &str,

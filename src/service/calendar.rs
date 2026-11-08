@@ -136,10 +136,9 @@ impl CalendarService {
     /// parsing remains available through the ordinary event methods.
     ///
     /// With [`EventSource::PreferThe5ers`] the export answers when it covers
-    /// the week. It meets the strict bar by construction: every export event
-    /// carries an exact timestamp, "All Day" ones included — which is also
-    /// what lets a week with a high-impact "All Day" event be evidence at
-    /// all, since the scraper must reject such a week.
+    /// the week. Every export event carries an exact timestamp, "All Day"
+    /// ones included — the time The5ers publish — while the scraper marks
+    /// those [`EventTiming::Untimed`](crate::EventTiming), with no instant.
     pub async fn get_week_high_impact_evidence_for(
         &self,
         date: NaiveDate,

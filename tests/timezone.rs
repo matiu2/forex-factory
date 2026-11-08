@@ -86,7 +86,6 @@ fn high_impact_evidence_rejects_malformed_rows_alongside_valid_events() {
         valid.replace(">USD<", ">USD ?<"),
         valid.replace("Fri Nov 6", "Fri Oct 30"),
         valid.replace("Employment release", ""),
-        valid.replace("1:30pm", "Tentative"),
     ] {
         assert!(
             parser
@@ -126,11 +125,11 @@ fn high_impact_evidence_rejects_malformed_rows_alongside_valid_events() {
             .currency,
         "All"
     );
-    assert!(
-        parser
-            .parse_high_impact_evidence(&global_high.replace("1:30pm", "Tentative"), date)
-            .is_err()
-    );
+    // An untimed high-impact row is kept, marked: no news window from it.
+    let untimed = parser
+        .parse_high_impact_evidence(&global_high.replace("1:30pm", "Tentative"), date)
+        .unwrap();
+    assert!(!untimed[0].has_exact_time());
     let holiday = valid
         .replace("icon--ff-impact-red", "icon--ff-impact-gra")
         .replace("1:30pm", "All Day");

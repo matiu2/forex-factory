@@ -49,13 +49,17 @@ pub(super) fn accepts(row_time: Option<&RowTime>, impact: Impact) -> Result<()> 
         )),
         // Anything but a clock time means "no exact time": "All Day",
         // "Tentative", or a release window such as "9th-14th" or "Oct 17th".
-        // Fatal on a high-impact row — there is nothing to build a window
-        // around. Kept, marked untimed, otherwise, so one undated low-impact
-        // release cannot void a week's evidence and evidence returns the
-        // same event display parsing does.
-        Some(RowTime::Untimed(label)) if impact == Impact::High => {
+        // Kept, marked untimed, at any impact: such a release opens no news
+        // window from the scrape (the export, where it covers the week,
+        // gives it the time The5ers publish), and one untimed release
+        // cannot void a week's evidence. On a high-impact row, though, text
+        // that is no known untimed form might be a garbled time, so it is
+        // an error rather than a silently dropped window.
+        Some(RowTime::Untimed(label))
+            if impact == Impact::High && !super::row_time::is_known_untimed(label) =>
+        {
             Err(Error::InvalidCalendarEvidence(format!(
-                "high-impact event has no exact release time ({label:?})"
+                "high-impact event has an unrecognized time ({label:?})"
             )))
         }
         Some(RowTime::Untimed(_)) => Ok(()),

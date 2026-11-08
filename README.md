@@ -125,8 +125,11 @@ let events = service.get_week_events_for(date).await?;
 
 The export only holds the current week, so other weeks — and the export being
 unreachable, rate-limited, or not yet rolled over — fall back to scraping. The
-two agree on timed events; they differ on "All Day" events, where the export
-has its own timestamp. Export events have no `event_id`.
+two agree on timed events; they differ on untimed ones ("All Day",
+"Tentative", "9th-14th"), which the export gives its own timestamp and the
+scraper marks `EventTiming::Untimed` (no instant; `datetime` is the row's
+midnight). Check `event.has_exact_time()` before treating `datetime` as a
+release instant. Export events have no `event_id`.
 
 ## WASM Notes
 
