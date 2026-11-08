@@ -167,6 +167,7 @@ mod tests {
 
     /// A live window (the worker asks for now-2min .. now+1 day) inside the
     /// export's week is answered by the export alone.
+    #[cfg(not(target_arch = "wasm32"))] // tokio is a native-only dev-dependency
     #[tokio::test]
     async fn a_window_inside_the_week_is_answered_by_the_export() {
         let week = week();
@@ -218,6 +219,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(target_arch = "wasm32"))] // tokio is a native-only dev-dependency
     #[tokio::test]
     async fn an_inverted_window_is_an_error() {
         assert!(
