@@ -2,11 +2,11 @@
 use super::*;
 
 pub(super) fn date(text: &str, reference: NaiveDate) -> Option<NaiveDate> {
-    // Forex Factory's weekly calendar runs Sunday through Saturday:
-    // https://www.forexfactory.com/calendar?week=nov1.2026
-    let start = reference.checked_sub_signed(chrono::Duration::days(i64::from(
-        reference.weekday().num_days_from_sunday(),
-    )))?;
+    // `?week=<date>` is the seven days STARTING at that date, not the
+    // Sunday week around it (checked live 2026-11-08: nov8 → Sun–Sat,
+    // nov9 → Mon–Sun, nov11 → Wed–Tue), and the fetcher requests the
+    // reference date itself.
+    let start = reference;
     let end = start.checked_add_signed(chrono::Duration::days(6))?;
     [reference.year() - 1, reference.year(), reference.year() + 1]
         .into_iter()

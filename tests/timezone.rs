@@ -144,8 +144,10 @@ fn strict_evidence_resolves_new_year_dates_within_the_requested_week() {
     init();
     let parser = CalendarParser::with_timezone("UTC").unwrap();
     for (base, text, expected) in [
-        ((2026, 12, 31), "Fri Jan 1", "2027-01-01T13:30:00+00:00"),
-        ((2027, 1, 1), "Thu Dec 31", "2026-12-31T13:30:00+00:00"),
+        // A page requested on a December day runs into January: `?week=` is
+        // the seven days starting at the requested date.
+        ((2026, 12, 29), "Fri Jan 1", "2027-01-01T13:30:00+00:00"),
+        ((2026, 12, 29), "Thu Dec 31", "2026-12-31T13:30:00+00:00"),
     ] {
         let html = include_str!("fixtures/utc-release.html").replace("Fri Nov 6", text);
         let events = parser
