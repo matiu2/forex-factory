@@ -41,22 +41,26 @@ pub(super) fn time(
     previous: &mut Option<NaiveTime>,
     impact: Impact,
 ) -> Result<Option<NaiveTime>> {
-    if matches!(text, "All Day" | "Tentative") {
+    if text.is_empty() {
+        return previous.map(Some).ok_or_else(|| {
+            Error::InvalidCalendarEvidence("event time cannot be inherited from this day".into())
+        });
+    }
+    // Anything but a clock time means "no exact time": "All Day",
+    // "Tentative", or a release window such as "9th-14th" or "Oct 17th".
+    // Fatal on a high-impact row — there is nothing to build a window around
+    // — and skipped otherwise, so one undated low-impact release cannot void
+    // a week's evidence. Either way, rows below must not inherit a time.
+    let Some(time) = parse_time(text) else {
         *previous = None;
         return if impact == Impact::High {
-            Err(Error::InvalidCalendarEvidence(
-                "high-impact event has no exact release time".into(),
-            ))
+            Err(Error::InvalidCalendarEvidence(format!(
+                "high-impact event has no exact release time ({text:?})"
+            )))
         } else {
             Ok(None)
         };
-    }
-    if !text.is_empty() {
-        *previous = Some(parse_time(text).ok_or_else(|| {
-            Error::InvalidCalendarEvidence("unrecognized explicit event time".into())
-        })?);
-    }
-    previous.map(Some).ok_or_else(|| {
-        Error::InvalidCalendarEvidence("event time cannot be inherited from this day".into())
-    })
+    };
+    *previous = Some(time);
+    Ok(Some(time))
 }
