@@ -28,8 +28,14 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
-      - name: Install wasm-bindgen-cli
-        run: cargo install wasm-bindgen-cli
+      # The CLI's schema version must exactly match the wasm-bindgen crate in
+      # Cargo.lock, so install whichever version the lockfile pins.
+      - name: Install wasm-bindgen-cli (version from Cargo.lock)
+        run: |
+          VERSION=$(cargo metadata --format-version 1 --locked \
+            | jq -r '.packages[] | select(.name == "wasm-bindgen") | .version')
+          echo "wasm-bindgen in Cargo.lock: $VERSION"
+          cargo install wasm-bindgen-cli --version "$VERSION" --locked
 
       - name: Install Chrome
         uses: browser-actions/setup-chrome@v2
