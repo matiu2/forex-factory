@@ -40,6 +40,11 @@ pub enum Error {
     #[error("Incomplete calendar evidence: {0}")]
     InvalidCalendarEvidence(String),
 
+    /// The weekly JSON export was not the expected JSON (when rate-limited it
+    /// answers with an HTML page instead)
+    #[error("Invalid calendar export JSON: {0}")]
+    FeedJson(#[from] serde_json::Error),
+
     /// CSS selector parsing failed
     #[error("Invalid CSS selector: {0}")]
     InvalidSelector(String),

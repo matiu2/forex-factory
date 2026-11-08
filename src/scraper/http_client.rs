@@ -4,6 +4,7 @@ use reqwest::header::{ACCEPT, ACCEPT_LANGUAGE, COOKIE, HeaderMap, HeaderValue, U
 use tracing::{debug, info};
 
 use crate::error::{Error, Result};
+use crate::scraper::FEED_URL;
 
 /// Fetches the raw HTML content from Forex Factory calendar page using HTTP.
 pub struct HttpCalendarFetcher {
@@ -106,21 +107,19 @@ impl HttpCalendarFetcher {
             .await
     }
 
+    /// Fetch Forex Factory's weekly JSON export — the list The5ers publish.
+    /// Returns the raw body; it is only JSON when not rate-limited.
+    pub async fn fetch_feed(&self) -> Result<String> {
+        info!("Fetching calendar export from: {FEED_URL}");
+        let request = self.client.get(FEED_URL).header(ACCEPT, "application/json");
+        body_of(request.send().await?, FEED_URL).await
+    }
+
     /// Fetch the raw HTML from a URL.
     async fn fetch_url(&self, url: &str) -> Result<String> {
         info!("Fetching calendar from: {url}");
 
-        let response = self.client.get(url).send().await?;
-
-        let status = response.status();
-        if !status.is_success() {
-            return Err(Error::HttpStatus {
-                status,
-                url: url.to_string(),
-            });
-        }
-
-        let html = response.text().await?;
+        let html = body_of(self.client.get(url).send().await?, url).await?;
 
         debug!("Successfully fetched {} bytes of HTML", html.len());
 
@@ -137,6 +136,18 @@ impl HttpCalendarFetcher {
 
         Ok(html)
     }
+}
+
+/// The body of a successful response; a non-2xx status is an error.
+async fn body_of(response: reqwest::Response, url: &str) -> Result<String> {
+    let status = response.status();
+    if !status.is_success() {
+        return Err(Error::HttpStatus {
+            status,
+            url: url.to_string(),
+        });
+    }
+    Ok(response.text().await?)
 }
 
 /// Format a date into Forex Factory's week parameter format.

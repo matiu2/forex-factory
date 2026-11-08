@@ -86,6 +86,7 @@ src/
 - `EconomicEvent` - Struct representing a single economic event
 - `EventQuery` - Builder for filtering events
 - `Impact` - Enum for event impact levels (Low, Medium, High)
+- `EventSource` - Where events come from: scraped HTML, or The5ers' list first
 - `Error` - Library error type
 - `Result<T>` - Library result type alias
 - `resolve_currency` - Function to resolve country names to currency codes
@@ -110,6 +111,22 @@ async fn fetch_events() -> Result<()> {
     Ok(())
 }
 ```
+
+## Matching The5ers' calendar
+
+The5ers' economic calendar is Forex Factory's own weekly JSON export. To get
+event times exactly as The5ers publish them (they count trades within ±2
+minutes of a high-impact event as a breach), choose `EventSource::PreferThe5ers`:
+
+```rust
+let service = CalendarService::new()?.with_source(EventSource::PreferThe5ers);
+let events = service.get_week_events_for(date).await?;
+```
+
+The export only holds the current week, so other weeks — and the export being
+unreachable, rate-limited, or not yet rolled over — fall back to scraping. The
+two agree on timed events; they differ on "All Day" events, where the export
+has its own timestamp. Export events have no `event_id`.
 
 ## WASM Notes
 
